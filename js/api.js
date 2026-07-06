@@ -1,0 +1,572 @@
+window.AtelierAPI = (() => {
+  const config = window.ATELIER_CONFIG;
+  const U = window.AtelierUtils;
+
+  let state = {
+    clientes: [],
+    pedidos: [],
+    pagos: []
+  };
+
+  function hasRemoteUrl() {
+    return Boolean(config.APPS_SCRIPT_URL && config.APPS_SCRIPT_URL.trim());
+  }
+
+  function normalizeRecord(record) {
+    return Object.entries(record || {}).reduce((acc, [key, value]) => {
+      acc[key] = value == null ? "" : value;
+      return acc;
+    }, {});
+  }
+
+  function normalizeData(data) {
+    return {
+      clientes: (data?.clientes || []).map(normalizeRecord),
+      pedidos: (data?.pedidos || []).map((pedido) => ({
+        ...normalizeRecord(pedido),
+        valorTotal: U.toNumber(pedido.valorTotal),
+        primerAbono: U.toNumber(pedido.primerAbono),
+        saldoPendiente: U.toNumber(pedido.saldoPendiente)
+      })),
+      pagos: (data?.pagos || []).map((pago) => ({
+        ...normalizeRecord(pago),
+        monto: U.toNumber(pago.monto)
+      }))
+    };
+  }
+
+  function applyData(data) {
+    state = normalizeData(data);
+    U.writeStorage(config.CACHE_KEY, state);
+    return U.clone(state);
+  }
+
+  function getLocalData() {
+    const existing = U.readStorage(config.DEMO_STORAGE_KEY, null);
+    if (existing) return applyData(existing);
+    const seeded = seedDemoData();
+    U.writeStorage(config.DEMO_STORAGE_KEY, seeded);
+    return applyData(seeded);
+  }
+
+  function persistLocal() {
+    U.writeStorage(config.DEMO_STORAGE_KEY, state);
+    U.writeStorage(config.CACHE_KEY, state);
+    return U.clone(state);
+  }
+
+  function getCachedData() {
+    const cached = U.readStorage(config.CACHE_KEY, null);
+    if (!cached) return null;
+
+    try {
+      return normalizeData(cached);
+    } catch (error) {
+      console.warn("La caché local no se pudo leer y será ignorada.", error);
+      return null;
+    }
+  }
+
+  async function request(action, payload = {}) {
+    try {
+      return await requestPost(action, payload);
+    } catch (error) {
+      if (!config.JSONP_FALLBACK) throw error;
+      return requestJsonp(action, payload, error);
+    }
+  }
+
+  async function requestPost(action, payload = {}) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), config.REQUEST_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(config.APPS_SCRIPT_URL.trim(), {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8"
+        },
+        body: JSON.stringify({ action, payload }),
+        signal: controller.signal
+      });
+
+      const text = await response.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (error) {
+        throw new Error("La respuesta de Apps Script no es JSON válido.");
+      }
+
+      if (!response.ok || json.ok === false) {
+        throw new Error(json.message || "Apps Script rechazó la operación.");
+      }
+
+      return json;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  function requestJsonp(action, payload = {}, originalError) {
+    return new Promise((resolve, reject) => {
+      if (typeof document === "undefined" || !document.createElement) {
+        reject(originalError);
+        return;
+      }
+
+      const callbackName = `atelierJsonp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      const url = new URL(config.APPS_SCRIPT_URL.trim());
+      url.searchParams.set("action", action);
+      url.searchParams.set("payload", JSON.stringify(payload));
+      url.searchParams.set("callback", callbackName);
+
+      if (url.toString().length > (config.JSONP_MAX_URL_LENGTH || 1800)) {
+        reject(new Error(`${originalError.message} La confirmación automática no pudo usarse porque el pedido es muy largo.`));
+        return;
+      }
+
+      const script = document.createElement("script");
+      const timeout = window.setTimeout(() => {
+        cleanup();
+        reject(originalError);
+      }, config.REQUEST_TIMEOUT_MS);
+
+      function cleanup() {
+        window.clearTimeout(timeout);
+        delete window[callbackName];
+        script.remove();
+      }
+
+      window[callbackName] = (json) => {
+        cleanup();
+        if (!json || json.ok === false) {
+          reject(new Error(json?.message || originalError.message || "Apps Script rechazó la operación."));
+          return;
+        }
+        resolve(json);
+      };
+
+      script.onerror = () => {
+        cleanup();
+        reject(originalError);
+      };
+
+      script.src = url.toString();
+      document.head.appendChild(script);
+    });
+  }
+
+  async function loadAll(forceRemote = false) {
+    if (hasRemoteUrl()) {
+      try {
+        const result = await request("getAllData", { force: forceRemote });
+        return applyData(result.data || result);
+      } catch (error) {
+        const cached = getCachedData();
+        if (cached) {
+          applyData(cached);
+          throw new Error(`${error.message} Se muestran los últimos datos guardados en caché.`);
+        }
+        throw error;
+      }
+    }
+
+    if (config.USE_DEMO_DATA_WHEN_EMPTY) return getLocalData();
+    return applyData({ clientes: [], pedidos: [], pagos: [] });
+  }
+
+  async function mutate(action, payload, localMutation) {
+    if (hasRemoteUrl()) {
+      const before = U.clone(state);
+      try {
+        localMutation();
+        U.writeStorage(config.CACHE_KEY, state);
+        const result = await request(action, payload);
+        if (result.data?.clientes || result.clientes) return applyData(result.data || result);
+        return U.clone(state);
+      } catch (error) {
+        state = before;
+        U.writeStorage(config.CACHE_KEY, state);
+        throw error;
+      }
+    }
+
+    localMutation();
+    return persistLocal();
+  }
+
+  function recalculateOrder(pedidoId) {
+    const pedido = state.pedidos.find((item) => item.id === pedidoId);
+    if (!pedido) return;
+    const pagos = state.pagos.filter((item) => item.pedidoId === pedidoId);
+    const pagado = U.sum(pagos.map((pago) => pago.monto));
+    pedido.valorTotal = U.toNumber(pedido.valorTotal);
+    pedido.primerAbono = U.getInitialPayment(state.pagos, pedidoId);
+    pedido.saldoPendiente = Math.max(pedido.valorTotal - pagado, 0);
+    pedido.estadoPago = pedido.saldoPendiente <= 0 ? "pagado" : "pendiente";
+    pedido.mesEvento = U.getMonthKey(pedido.fechaEvento);
+    pedido.fechaActualizacion = U.todayISO();
+  }
+
+  function syncInitialPayment(pedido, amount) {
+    const monto = U.toNumber(amount);
+    const index = state.pagos.findIndex((pago) => pago.pedidoId === pedido.id && String(pago.esPrimerAbono).toUpperCase() === "SI");
+
+    if (monto <= 0 && index >= 0) {
+      state.pagos.splice(index, 1);
+      return;
+    }
+
+    if (monto <= 0) return;
+
+    const payment = {
+      id: index >= 0 ? state.pagos[index].id : (pedido.primerPagoId || U.createId("pago")),
+      pedidoId: pedido.id,
+      clienteId: pedido.clienteId,
+      fechaPago: pedido.fechaCreacion || U.todayISO(),
+      monto,
+      metodo: "Transferencia",
+      concepto: "Primer abono",
+      notas: "Abono inicial registrado desde el pedido",
+      esPrimerAbono: "SI",
+      fechaRegistro: pedido.fechaCreacion || U.todayISO()
+    };
+
+    if (index >= 0) state.pagos[index] = { ...state.pagos[index], ...payment };
+    else state.pagos.push(payment);
+  }
+
+  function createCliente(cliente) {
+    const record = {
+      id: cliente.id || U.createId("cli"),
+      nombre: cliente.nombre?.trim(),
+      telefono: cliente.telefono?.trim(),
+      instagram: cliente.instagram?.trim(),
+      correo: cliente.correo?.trim(),
+      direccion: cliente.direccion?.trim(),
+      notas: cliente.notas?.trim(),
+      fechaRegistro: U.todayISO()
+    };
+
+    return mutate("createCliente", { cliente: record }, () => {
+      state.clientes.push(record);
+    });
+  }
+
+  function updateCliente(id, cliente) {
+    return mutate("updateCliente", { id, cliente }, () => {
+      const index = state.clientes.findIndex((item) => item.id === id);
+      if (index < 0) throw new Error("No se encontró la clienta.");
+      state.clientes[index] = { ...state.clientes[index], ...cliente, id };
+    });
+  }
+
+  function deleteCliente(id) {
+    return mutate("deleteCliente", { id }, () => {
+      const orderIds = state.pedidos.filter((pedido) => pedido.clienteId === id).map((pedido) => pedido.id);
+      state.clientes = state.clientes.filter((cliente) => cliente.id !== id);
+      state.pedidos = state.pedidos.filter((pedido) => pedido.clienteId !== id);
+      state.pagos = state.pagos.filter((pago) => !orderIds.includes(pago.pedidoId));
+    });
+  }
+
+  function createPedido(pedido) {
+    const id = pedido.id || U.createId("ped");
+    const record = {
+      id,
+      clienteId: pedido.clienteId,
+      tipoVestido: pedido.tipoVestido?.trim(),
+      descripcion: pedido.descripcion?.trim(),
+      valorTotal: U.toNumber(pedido.valorTotal),
+      primerAbono: U.toNumber(pedido.primerAbono),
+      primerPagoId: pedido.primerPagoId || U.createId("pago"),
+      saldoPendiente: 0,
+      fechaEvento: pedido.fechaEvento,
+      fechaLimitePago: pedido.fechaLimitePago,
+      fechaEntrega: pedido.fechaEntrega,
+      estado: pedido.estado || "pendiente",
+      estadoPago: "pendiente",
+      notasInternas: pedido.notasInternas?.trim(),
+      referencias: pedido.referencias?.trim(),
+      mesEvento: U.getMonthKey(pedido.fechaEvento),
+      fechaCreacion: U.todayISO(),
+      fechaActualizacion: U.todayISO()
+    };
+
+    return mutate("createPedido", { pedido: record }, () => {
+      state.pedidos.push(record);
+      syncInitialPayment(record, record.primerAbono);
+      recalculateOrder(id);
+    });
+  }
+
+  function updatePedido(id, pedido) {
+    const hasInitialPayment = state.pagos.some((pago) => pago.pedidoId === id && String(pago.esPrimerAbono).toUpperCase() === "SI");
+    const payload = {
+      ...pedido,
+      primerPagoId: U.toNumber(pedido.primerAbono) > 0 && !hasInitialPayment ? U.createId("pago") : pedido.primerPagoId
+    };
+
+    return mutate("updatePedido", { id, pedido: payload }, () => {
+      const index = state.pedidos.findIndex((item) => item.id === id);
+      if (index < 0) throw new Error("No se encontró el pedido.");
+      const updated = {
+        ...state.pedidos[index],
+        ...payload,
+        id,
+        valorTotal: U.toNumber(payload.valorTotal),
+        primerAbono: U.toNumber(payload.primerAbono),
+        mesEvento: U.getMonthKey(payload.fechaEvento),
+        fechaActualizacion: U.todayISO()
+      };
+      state.pedidos[index] = updated;
+      state.pagos = state.pagos.map((pago) => (
+        pago.pedidoId === id ? { ...pago, clienteId: updated.clienteId } : pago
+      ));
+      syncInitialPayment(updated, updated.primerAbono);
+      recalculateOrder(id);
+    });
+  }
+
+  function deletePedido(id) {
+    return mutate("deletePedido", { id }, () => {
+      state.pedidos = state.pedidos.filter((pedido) => pedido.id !== id);
+      state.pagos = state.pagos.filter((pago) => pago.pedidoId !== id);
+    });
+  }
+
+  function registerPago(pago) {
+    const pedido = state.pedidos.find((item) => item.id === pago.pedidoId);
+    if (!pedido) throw new Error("Selecciona un pedido válido.");
+    const record = {
+      id: pago.id || U.createId("pago"),
+      pedidoId: pago.pedidoId,
+      clienteId: pedido.clienteId,
+      fechaPago: pago.fechaPago || U.todayISO(),
+      monto: U.toNumber(pago.monto),
+      metodo: pago.metodo || "Transferencia",
+      concepto: pago.concepto || "Abono",
+      notas: pago.notas || "",
+      esPrimerAbono: "NO",
+      fechaRegistro: U.todayISO()
+    };
+
+    return mutate("registerPago", { pago: record }, () => {
+      state.pagos.push(record);
+      recalculateOrder(pago.pedidoId);
+    });
+  }
+
+  function deletePago(id) {
+    return mutate("deletePago", { id }, () => {
+      const pago = state.pagos.find((item) => item.id === id);
+      state.pagos = state.pagos.filter((item) => item.id !== id);
+      if (pago) recalculateOrder(pago.pedidoId);
+    });
+  }
+
+  function seedDemoData() {
+    const clientes = [
+      {
+        id: "cli_paula",
+        nombre: "Paula Gómez",
+        telefono: "300 456 1122",
+        instagram: "@paulagomez",
+        correo: "paula@example.com",
+        direccion: "El Poblado, Medellín",
+        notas: "Quiere tonos marfil y bordado delicado.",
+        fechaRegistro: "2026-06-02"
+      },
+      {
+        id: "cli_daniela",
+        nombre: "Daniela Ríos",
+        telefono: "315 888 3400",
+        instagram: "@danirios",
+        correo: "daniela@example.com",
+        direccion: "Envigado",
+        notas: "Novia civil y recepción nocturna.",
+        fechaRegistro: "2026-05-18"
+      },
+      {
+        id: "cli_camila",
+        nombre: "Camila Ortega",
+        telefono: "301 222 4477",
+        instagram: "@camiortega",
+        correo: "camila@example.com",
+        direccion: "Laureles",
+        notas: "Prefiere comunicación por WhatsApp.",
+        fechaRegistro: "2026-06-21"
+      },
+      {
+        id: "cli_valentina",
+        nombre: "Valentina Mora",
+        telefono: "320 555 7811",
+        instagram: "@valemora",
+        correo: "vale@example.com",
+        direccion: "Sabaneta",
+        notas: "Evento de grados. Silueta limpia y mangas suaves.",
+        fechaRegistro: "2026-07-01"
+      }
+    ];
+
+    const pedidos = [
+      {
+        id: "ped_paula_15",
+        clienteId: "cli_paula",
+        tipoVestido: "Vestido quinceañera",
+        descripcion: "Corset bordado, falda amplia desmontable y capa ligera.",
+        valorTotal: 2800000,
+        primerAbono: 1000000,
+        saldoPendiente: 1800000,
+        fechaEvento: "2026-11-14",
+        fechaLimitePago: "2026-10-30",
+        fechaEntrega: "2026-11-05",
+        estado: "confeccion",
+        estadoPago: "pendiente",
+        notasInternas: "Confirmar segunda prueba en septiembre.",
+        referencias: "https://pin.it/referencia-paula",
+        mesEvento: "2026-11",
+        fechaCreacion: "2026-06-02",
+        fechaActualizacion: "2026-07-03"
+      },
+      {
+        id: "ped_daniela_boda",
+        clienteId: "cli_daniela",
+        tipoVestido: "Vestido de novia",
+        descripcion: "Línea A, encaje francés y cola desmontable.",
+        valorTotal: 6500000,
+        primerAbono: 3000000,
+        saldoPendiente: 3500000,
+        fechaEvento: "2026-12-05",
+        fechaLimitePago: "2026-11-20",
+        fechaEntrega: "2026-11-27",
+        estado: "diseno",
+        estadoPago: "pendiente",
+        notasInternas: "Enviar propuesta de velo.",
+        referencias: "https://pin.it/referencia-daniela",
+        mesEvento: "2026-12",
+        fechaCreacion: "2026-05-18",
+        fechaActualizacion: "2026-07-02"
+      },
+      {
+        id: "ped_camila_gala",
+        clienteId: "cli_camila",
+        tipoVestido: "Vestido de gala",
+        descripcion: "Satín negro, escote asimétrico y abertura lateral.",
+        valorTotal: 1800000,
+        primerAbono: 900000,
+        saldoPendiente: 0,
+        fechaEvento: "2026-07-20",
+        fechaLimitePago: "2026-07-10",
+        fechaEntrega: "2026-07-16",
+        estado: "listo",
+        estadoPago: "pagado",
+        notasInternas: "Lista para entrega con forro ajustado.",
+        referencias: "",
+        mesEvento: "2026-07",
+        fechaCreacion: "2026-06-21",
+        fechaActualizacion: "2026-07-05"
+      },
+      {
+        id: "ped_valentina_grados",
+        clienteId: "cli_valentina",
+        tipoVestido: "Vestido de grados",
+        descripcion: "Vestido midi en verde salvia con drapeado frontal.",
+        valorTotal: 2200000,
+        primerAbono: 500000,
+        saldoPendiente: 1700000,
+        fechaEvento: "2026-08-16",
+        fechaLimitePago: "2026-08-01",
+        fechaEntrega: "2026-08-10",
+        estado: "pendiente",
+        estadoPago: "pendiente",
+        notasInternas: "Tomar medidas definitivas esta semana.",
+        referencias: "",
+        mesEvento: "2026-08",
+        fechaCreacion: "2026-07-01",
+        fechaActualizacion: "2026-07-01"
+      }
+    ];
+
+    const pagos = [
+      {
+        id: "pago_paula_1",
+        pedidoId: "ped_paula_15",
+        clienteId: "cli_paula",
+        fechaPago: "2026-06-02",
+        monto: 1000000,
+        metodo: "Transferencia",
+        concepto: "Primer abono",
+        notas: "",
+        esPrimerAbono: "SI",
+        fechaRegistro: "2026-06-02"
+      },
+      {
+        id: "pago_daniela_1",
+        pedidoId: "ped_daniela_boda",
+        clienteId: "cli_daniela",
+        fechaPago: "2026-05-18",
+        monto: 3000000,
+        metodo: "Transferencia",
+        concepto: "Primer abono",
+        notas: "Separación de fecha y diseño.",
+        esPrimerAbono: "SI",
+        fechaRegistro: "2026-05-18"
+      },
+      {
+        id: "pago_camila_1",
+        pedidoId: "ped_camila_gala",
+        clienteId: "cli_camila",
+        fechaPago: "2026-06-21",
+        monto: 900000,
+        metodo: "Nequi",
+        concepto: "Primer abono",
+        notas: "",
+        esPrimerAbono: "SI",
+        fechaRegistro: "2026-06-21"
+      },
+      {
+        id: "pago_camila_2",
+        pedidoId: "ped_camila_gala",
+        clienteId: "cli_camila",
+        fechaPago: "2026-07-05",
+        monto: 900000,
+        metodo: "Transferencia",
+        concepto: "Saldo final",
+        notas: "",
+        esPrimerAbono: "NO",
+        fechaRegistro: "2026-07-05"
+      },
+      {
+        id: "pago_valentina_1",
+        pedidoId: "ped_valentina_grados",
+        clienteId: "cli_valentina",
+        fechaPago: "2026-07-01",
+        monto: 500000,
+        metodo: "Daviplata",
+        concepto: "Primer abono",
+        notas: "",
+        esPrimerAbono: "SI",
+        fechaRegistro: "2026-07-01"
+      }
+    ];
+
+    return { clientes, pedidos, pagos };
+  }
+
+  return {
+    loadAll,
+    createCliente,
+    updateCliente,
+    deleteCliente,
+    createPedido,
+    updatePedido,
+    deletePedido,
+    registerPago,
+    deletePago,
+    hasRemoteUrl,
+    getCachedData,
+    getState: () => U.clone(state)
+  };
+})();

@@ -1,0 +1,189 @@
+@media (max-width: 1180px) {
+  .dashboard-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .split-grid,
+  .filters-row.compact {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .topbar {
+    grid-template-columns: auto 1fr;
+  }
+
+  .topbar-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .search-box {
+    width: 100%;
+    flex: 1;
+  }
+}
+
+@media (max-width: 860px) {
+  .sidebar {
+    transform: translateX(-105%);
+    transition: transform var(--ease);
+  }
+
+  .sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .app-shell {
+    margin-left: 0;
+    padding-bottom: 88px;
+  }
+
+  .mobile-menu {
+    display: inline-flex !important;
+  }
+
+  .topbar {
+    grid-template-columns: auto 1fr;
+  }
+
+  .topbar-actions {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .nav-list {
+    margin-top: 26px;
+  }
+
+  .split-grid,
+  .filters-row.compact,
+  .payments-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .table-row.header {
+    display: none;
+  }
+
+  .table-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 16px;
+  }
+
+  .table-row > div {
+    display: grid;
+    gap: 4px;
+  }
+
+  .table-row > div::before {
+    content: attr(data-label);
+    color: var(--color-soft);
+    font-size: 11px;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  .agenda-card {
+    grid-template-columns: 82px 1fr;
+  }
+
+  .agenda-card .row-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  body {
+    background: var(--color-porcelain);
+  }
+
+  .app-shell {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .topbar {
+    margin-right: -14px;
+    margin-left: -14px;
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .topbar h2 {
+    font-size: 31px;
+  }
+
+  .topbar-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-grid,
+  .cards-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .module-toolbar,
+  .panel-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .module-toolbar .primary-button,
+  .module-toolbar .ghost-button,
+  .topbar-actions .primary-button,
+  .topbar-actions .ghost-button {
+    width: 100%;
+  }
+
+  .metric-card {
+    min-height: auto;
+  }
+
+  .status-line {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-root {
+    padding: 0;
+  }
+
+  .modal-card {
+    min-height: 100vh;
+    border-radius: 0;
+  }
+
+  .modal-header,
+  .modal-footer {
+    position: sticky;
+    z-index: 2;
+    background: var(--color-paper);
+  }
+
+  .modal-header {
+    top: 0;
+  }
+
+  .modal-footer {
+    bottom: 0;
+  }
+
+  .modal-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .modal-footer button {
+    width: 100%;
+  }
+
+  .toast-host {
+    right: 12px;
+    bottom: 12px;
+  }
+}
