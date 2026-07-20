@@ -9,8 +9,9 @@ window.ATELIER_CONFIG = {
 
   LOCALE: "es-CO",
   CURRENCY: "COP",
+  TIME_ZONE: "America/Bogota",
   REQUEST_TIMEOUT_MS: 18000,
-  CACHE_KEY: "atelierStudio.cache.v2",
+  CACHE_KEY: "atelierStudio.cache.v3",
   DEMO_STORAGE_KEY: "atelierStudio.demo.v1",
 
   MAX_CLIENT_CARDS: 120,

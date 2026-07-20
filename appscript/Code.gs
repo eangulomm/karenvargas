@@ -20,6 +20,8 @@ const ATELIER_HEADERS = {
 const ATELIER_SCHEMA_VERSION = "2026-07-20.4";
 const ATELIER_NUMERIC_FIELDS = ["valorTotal", "primerAbono", "saldoPendiente", "monto", "costoTotal", "porcentajeGanancia", "valorGanancia", "precioSugerido", "ajuste", "precioFinal", "porcentajeAbono", "abonoRequerido", "vigenciaDias", "costoUnitario"];
 const ATELIER_DATE_FIELDS = ["fechaRegistro", "fechaEvento", "fechaLimitePago", "fechaEntrega", "fechaCreacion", "fechaActualizacion", "fechaPago", "fecha"];
+const ATELIER_TIME_FIELDS = ["hora"];
+const ATELIER_MONTH_FIELDS = ["mesEvento"];
 let ATELIER_SETUP_READY = false;
 let ATELIER_ROWS_CACHE = {};
 
@@ -743,6 +745,8 @@ function readRows_(name) {
         const actualIndex = actualHeaders.indexOf(header);
         let value = actualIndex >= 0 ? row[actualIndex] : "";
         if (ATELIER_DATE_FIELDS.indexOf(header) >= 0) value = formatDate_(value);
+        if (ATELIER_TIME_FIELDS.indexOf(header) >= 0) value = formatTime_(value);
+        if (ATELIER_MONTH_FIELDS.indexOf(header) >= 0) value = formatMonth_(value);
         if (ATELIER_NUMERIC_FIELDS.indexOf(header) >= 0) value = toNumber_(value);
         record[header] = value == null ? "" : value;
         return record;
@@ -918,6 +922,8 @@ function cleanRecord_(record) {
 function normalizeValueForSheet_(header, value) {
   if (ATELIER_NUMERIC_FIELDS.indexOf(header) >= 0) return toNumber_(value);
   if (ATELIER_DATE_FIELDS.indexOf(header) >= 0) return value ? formatDate_(value) : "";
+  if (ATELIER_TIME_FIELDS.indexOf(header) >= 0) return value ? formatTime_(value) : "";
+  if (ATELIER_MONTH_FIELDS.indexOf(header) >= 0) return value ? formatMonth_(value) : "";
   return value == null ? "" : value;
 }
 
@@ -944,6 +950,30 @@ function formatDate_(value) {
     return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd");
   }
   return String(value).slice(0, 10);
+}
+
+function formatTime_(value) {
+  if (!value) return "";
+  if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "HH:mm");
+  }
+  const text = String(value).trim();
+  const direct = text.match(/^(\d{1,2}):(\d{2})/);
+  if (direct) return String(direct[1]).padStart(2, "0") + ":" + direct[2];
+  const parsed = new Date(text);
+  return isNaN(parsed.getTime()) ? text : Utilities.formatDate(parsed, Session.getScriptTimeZone(), "HH:mm");
+}
+
+function formatMonth_(value) {
+  if (!value) return "";
+  if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM");
+  }
+  const text = String(value).trim();
+  const direct = text.match(/^(\d{4})-(\d{2})/);
+  if (direct) return direct[1] + "-" + direct[2];
+  const parsed = new Date(text);
+  return isNaN(parsed.getTime()) ? text : Utilities.formatDate(parsed, Session.getScriptTimeZone(), "yyyy-MM");
 }
 
 function monthKey_(value) {
