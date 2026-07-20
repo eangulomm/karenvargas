@@ -17,7 +17,7 @@ window.CotizacionesModule = (() => {
 
   function init() {
     UI.qs("#newQuoteBtn")?.addEventListener("click", () => openEditor());
-    UI.qs("#costCatalogBtn")?.addEventListener("click", openCatalog);
+    UI.qs("#costCatalogBtn")?.addEventListener("click", () => openCatalog());
     UI.qs("#quoteSearch")?.addEventListener("input", U.debounce((event) => { search = event.target.value; render(); }));
     UI.qs("#quoteStatusFilter")?.addEventListener("change", (event) => { statusFilter = event.target.value; render(); });
     UI.qs("#quotesTable")?.addEventListener("click", handleTableAction);
