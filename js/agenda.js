@@ -37,6 +37,10 @@ window.AgendaModule = (() => {
       if (!cita) return;
       if (button.dataset.citaAction === "edit") openAppointmentModal(cita);
       if (button.dataset.citaAction === "delete") confirmDelete(cita);
+      if (button.dataset.citaAction === "quote") {
+        window.AtelierApp.navigate("cotizaciones");
+        window.CotizacionesModule.openEditor(null, { clienteId: cita.clienteId, citaId: cita.id, descripcion: cita.notas || "Vestido personalizado" });
+      }
     });
   }
 
@@ -92,7 +96,7 @@ window.AgendaModule = (() => {
         ${cita.modificaciones ? `<p class="appointment-changes"><strong>Modificaciones:</strong> ${U.escapeHtml(cita.modificaciones)}</p>` : ""}
         <div class="card-actions">${UI.badge(STATUSES.find((item) => item.value === cita.estado)?.label || cita.estado, tone)}</div>
       </div>
-      <div class="row-actions"><button class="small-button" data-cita-action="edit" data-id="${U.escapeHtml(cita.id)}" type="button">Editar</button><button class="small-button" data-cita-action="delete" data-id="${U.escapeHtml(cita.id)}" type="button">Eliminar</button></div>
+      <div class="row-actions">${["Cotización", "Primera cita"].includes(cita.tipo) ? `<button class="small-button" data-cita-action="quote" data-id="${U.escapeHtml(cita.id)}" type="button">Cotizar</button>` : ""}<button class="small-button" data-cita-action="edit" data-id="${U.escapeHtml(cita.id)}" type="button">Editar</button><button class="small-button" data-cita-action="delete" data-id="${U.escapeHtml(cita.id)}" type="button">Eliminar</button></div>
     </article>`;
   }
 

@@ -108,6 +108,12 @@ El archivo de Google Sheets debe tener estas hojas y columnas. El script tambié
 | valor | Valor |
 | descripcion | Descripción |
 
+### Cotizaciones y catálogo de costos
+
+El despliegue actualizado crea también las hojas `Cotizaciones` y `CatalogoCostos`. La primera conserva la hoja de costos, el método de ganancia, el precio final, el abono y el estado de cada propuesta. La segunda guarda telas, insumos, mano de obra y servicios frecuentes para reutilizarlos sin afectar cotizaciones anteriores.
+
+El flujo recomendado es: `Primera cita > Cotizar > Hoja de costos > PDF > Aceptar > Crear pedido`.
+
 ## Cómo desplegar Apps Script
 
 1. Crea un Google Sheet nuevo para el atelier.
@@ -115,7 +121,7 @@ El archivo de Google Sheets debe tener estas hojas y columnas. El script tambié
 3. Reemplaza el contenido de `Code.gs` con el archivo `appscript/Code.gs` de este entregable.
 4. Guarda el proyecto.
 5. Ejecuta la función `setup` una vez y autoriza permisos.
-6. Verifica que se hayan creado las hojas `Clientes`, `Pedidos`, `Pagos` y `Configuracion`.
+6. Verifica que se hayan creado las hojas `Clientes`, `Pedidos`, `Pagos`, `Citas`, `Cotizaciones`, `CatalogoCostos` y `Configuracion`.
 7. Ve a `Implementar > Nueva implementación`.
 8. Tipo: `Aplicación web`.
 9. Ejecutar como: `Yo`.

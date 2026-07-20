@@ -7,11 +7,18 @@ const ATELIER_HEADERS = {
   ],
   Pagos: ["id", "pedidoId", "clienteId", "fechaPago", "monto", "metodo", "concepto", "notas", "esPrimerAbono", "fechaRegistro"],
   Citas: ["id", "clienteId", "pedidoId", "tipo", "fecha", "hora", "duracion", "estado", "notas", "modificaciones", "fechaRegistro", "fechaActualizacion"],
+  Cotizaciones: [
+    "id", "numero", "clienteId", "citaId", "pedidoId", "descripcion", "costosJson", "costoTotal",
+    "metodoGanancia", "porcentajeGanancia", "valorGanancia", "precioSugerido", "ajuste", "precioFinal",
+    "porcentajeAbono", "abonoRequerido", "vigenciaDias", "fechaEntrega", "condiciones", "estado",
+    "fechaCreacion", "fechaActualizacion"
+  ],
+  CatalogoCostos: ["id", "categoria", "nombre", "unidad", "costoUnitario", "activo", "fechaActualizacion"],
   Configuracion: ["clave", "valor", "descripcion"]
 };
 
-const ATELIER_SCHEMA_VERSION = "2026-07-20.3";
-const ATELIER_NUMERIC_FIELDS = ["valorTotal", "primerAbono", "saldoPendiente", "monto"];
+const ATELIER_SCHEMA_VERSION = "2026-07-20.4";
+const ATELIER_NUMERIC_FIELDS = ["valorTotal", "primerAbono", "saldoPendiente", "monto", "costoTotal", "porcentajeGanancia", "valorGanancia", "precioSugerido", "ajuste", "precioFinal", "porcentajeAbono", "abonoRequerido", "vigenciaDias", "costoUnitario"];
 const ATELIER_DATE_FIELDS = ["fechaRegistro", "fechaEvento", "fechaLimitePago", "fechaEntrega", "fechaCreacion", "fechaActualizacion", "fechaPago", "fecha"];
 let ATELIER_SETUP_READY = false;
 let ATELIER_ROWS_CACHE = {};
@@ -158,6 +165,18 @@ function handleAction_(action, payload) {
         return updateCita_(payload.id, payload.cita || payload);
       case "deleteCita":
         return deleteCita_(payload.id);
+      case "createCotizacion":
+        return createCotizacion_(payload.cotizacion || payload);
+      case "updateCotizacion":
+        return updateCotizacion_(payload.id, payload.cotizacion || payload);
+      case "deleteCotizacion":
+        return deleteCotizacion_(payload.id);
+      case "createCatalogoCosto":
+        return createCatalogoCosto_(payload.item || payload);
+      case "updateCatalogoCosto":
+        return updateCatalogoCosto_(payload.id, payload.item || payload);
+      case "deleteCatalogoCosto":
+        return deleteCatalogoCosto_(payload.id);
       case "getDashboard":
         return getDashboard_();
       case "getAgendaPorMes":
@@ -255,6 +274,9 @@ function deleteCliente_(id) {
   deleteWhere_("Citas", function(cita) {
     return cita.clienteId === id;
   });
+  deleteWhere_("Cotizaciones", function(cotizacion) {
+    return cotizacion.clienteId === id;
+  });
   deleteRecord_("Clientes", id);
 
   return { ok: true, message: "Clienta eliminada", data: { id } };
@@ -347,6 +369,9 @@ function deletePedido_(id) {
   });
   deleteWhere_("Citas", function(cita) {
     return cita.pedidoId === id;
+  });
+  readRows_("Cotizaciones").forEach(function(cotizacion) {
+    if (cotizacion.pedidoId === id) updateRecord_("Cotizaciones", cotizacion.id, { pedidoId: "", estado: "aceptada" });
   });
   deleteRecord_("Pedidos", id);
 
@@ -458,8 +483,136 @@ function getAllData_() {
     clientes: readRows_("Clientes"),
     pedidos: readRows_("Pedidos"),
     pagos: readRows_("Pagos"),
-    citas: readRows_("Citas")
+    citas: readRows_("Citas"),
+    cotizaciones: readRows_("Cotizaciones"),
+    catalogoCostos: readRows_("CatalogoCostos")
   };
+}
+
+function calculateCotizacion_(cotizacion) {
+  const clean = cleanRecord_(cotizacion || {});
+  let costos = [];
+  try {
+    costos = Array.isArray(cotizacion.costos) ? cotizacion.costos : JSON.parse(clean.costosJson || "[]");
+  } catch (error) {
+    throw new Error("La lista de costos no es válida.");
+  }
+  costos = costos.map(function(item) {
+    const cantidad = Math.max(toNumber_(item.cantidad), 0);
+    const costoUnitario = Math.max(toNumber_(item.costoUnitario), 0);
+    return {
+      categoria: String(item.categoria || "Otros").trim(),
+      nombre: String(item.nombre || "").trim(),
+      unidad: String(item.unidad || "unidad").trim(),
+      cantidad,
+      costoUnitario,
+      subtotal: cantidad * costoUnitario
+    };
+  }).filter(function(item) { return item.nombre && item.cantidad > 0; });
+  if (!costos.length) throw new Error("Agrega al menos un costo a la cotización.");
+
+  const costoTotal = sum_(costos.map(function(item) { return item.subtotal; }));
+  const porcentaje = Math.max(toNumber_(clean.porcentajeGanancia), 0);
+  const metodo = clean.metodoGanancia === "margen" ? "margen" : "sobre_costo";
+  if (metodo === "margen" && porcentaje >= 100) throw new Error("El margen debe ser menor al 100%.");
+  const precioBase = metodo === "margen"
+    ? costoTotal / (1 - porcentaje / 100)
+    : costoTotal * (1 + porcentaje / 100);
+  const ajuste = toNumber_(clean.ajuste);
+  const precioSugerido = Math.round(precioBase);
+  const precioFinal = toNumber_(clean.precioFinal) > 0 ? toNumber_(clean.precioFinal) : Math.max(precioSugerido + ajuste, 0);
+  const porcentajeAbono = Math.min(Math.max(toNumber_(clean.porcentajeAbono) || 50, 0), 100);
+  return Object.assign({}, clean, {
+    costosJson: JSON.stringify(costos),
+    costoTotal,
+    metodoGanancia: metodo,
+    porcentajeGanancia: porcentaje,
+    valorGanancia: Math.max(precioFinal - costoTotal, 0),
+    precioSugerido,
+    ajuste,
+    precioFinal,
+    porcentajeAbono,
+    abonoRequerido: Math.round(precioFinal * porcentajeAbono / 100)
+  });
+}
+
+function validateCotizacion_(clean) {
+  if (!clean.clienteId || !findById_("Clientes", clean.clienteId)) throw new Error("Selecciona una clienta válida.");
+  if (!clean.descripcion) throw new Error("Describe el vestido o servicio a cotizar.");
+  if (toNumber_(clean.precioFinal) <= 0) throw new Error("El precio final debe ser mayor a cero.");
+}
+
+function createCotizacion_(cotizacion) {
+  setup_();
+  const clean = calculateCotizacion_(cotizacion || {});
+  validateCotizacion_(clean);
+  const id = clean.id || makeId_("cot");
+  const existingById = findById_("Cotizaciones", id);
+  if (existingById) return { ok: true, message: "Cotización ya registrada", data: { record: existingById } };
+  const numero = clean.numero || ("COT-" + today_().replace(/-/g, "") + "-" + id.slice(-4).toUpperCase());
+  appendRecord_("Cotizaciones", Object.assign({}, clean, {
+    id,
+    numero,
+    pedidoId: clean.pedidoId || "",
+    citaId: clean.citaId || "",
+    estado: clean.estado || "borrador",
+    vigenciaDias: toNumber_(clean.vigenciaDias) || 15,
+    fechaCreacion: today_(),
+    fechaActualizacion: today_()
+  }));
+  return { ok: true, message: "Cotización creada", data: { record: findById_("Cotizaciones", id) } };
+}
+
+function updateCotizacion_(id, cotizacion) {
+  setup_();
+  const current = findById_("Cotizaciones", id);
+  if (!id || !current) throw new Error("No se encontró la cotización.");
+  const clean = calculateCotizacion_(Object.assign({}, current, cotizacion || {}));
+  validateCotizacion_(clean);
+  updateRecord_("Cotizaciones", id, Object.assign({}, clean, { fechaActualizacion: today_() }));
+  return { ok: true, message: "Cotización actualizada", data: { record: findById_("Cotizaciones", id) } };
+}
+
+function deleteCotizacion_(id) {
+  setup_();
+  if (!id || !findById_("Cotizaciones", id)) return { ok: true, message: "Cotización ya eliminada", data: { id } };
+  deleteRecord_("Cotizaciones", id);
+  return { ok: true, message: "Cotización eliminada", data: { id } };
+}
+
+function createCatalogoCosto_(item) {
+  setup_();
+  const clean = cleanRecord_(item || {});
+  if (!clean.nombre) throw new Error("El nombre del costo es obligatorio.");
+  const id = clean.id || makeId_("ins");
+  const existingById = findById_("CatalogoCostos", id);
+  if (existingById) return { ok: true, message: "Costo ya registrado", data: { record: existingById } };
+  appendRecord_("CatalogoCostos", {
+    id,
+    categoria: clean.categoria || "Materiales",
+    nombre: clean.nombre,
+    unidad: clean.unidad || "unidad",
+    costoUnitario: Math.max(toNumber_(clean.costoUnitario), 0),
+    activo: "SI",
+    fechaActualizacion: today_()
+  });
+  return { ok: true, message: "Costo guardado en catálogo", data: { record: findById_("CatalogoCostos", id) } };
+}
+
+function updateCatalogoCosto_(id, item) {
+  setup_();
+  if (!id || !findById_("CatalogoCostos", id)) throw new Error("No se encontró el costo del catálogo.");
+  const clean = cleanRecord_(item || {});
+  if (!clean.nombre) throw new Error("El nombre del costo es obligatorio.");
+  updateRecord_("CatalogoCostos", id, Object.assign({}, clean, { costoUnitario: Math.max(toNumber_(clean.costoUnitario), 0), fechaActualizacion: today_() }));
+  return { ok: true, message: "Costo actualizado", data: { record: findById_("CatalogoCostos", id) } };
+}
+
+function deleteCatalogoCosto_(id) {
+  setup_();
+  if (!id || !findById_("CatalogoCostos", id)) return { ok: true, message: "Costo ya eliminado", data: { id } };
+  deleteRecord_("CatalogoCostos", id);
+  return { ok: true, message: "Costo eliminado", data: { id } };
 }
 
 function createCita_(cita) {

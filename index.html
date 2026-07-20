@@ -45,6 +45,10 @@
         <span class="nav-icon">◇</span>
         <span>Pedidos</span>
       </button>
+      <button class="nav-item" data-view="cotizaciones" type="button">
+        <span class="nav-icon">%</span>
+        <span>Cotizaciones</span>
+      </button>
       <button class="nav-item" data-view="pagos" type="button">
         <span class="nav-icon">$</span>
         <span>Pagos</span>
@@ -211,6 +215,38 @@
         </article>
       </div>
       <div id="paymentsTable" class="responsive-table"></div>
+    </section>
+
+    <section class="content-view" data-view-panel="cotizaciones">
+      <div class="module-toolbar">
+        <div>
+          <p class="section-kicker">Precios con rentabilidad</p>
+          <h3>Cotizaciones y costos</h3>
+        </div>
+        <div class="row-actions">
+          <button id="costCatalogBtn" class="ghost-button" type="button">Catálogo de costos</button>
+          <button id="newQuoteBtn" class="primary-button" type="button">Nueva cotización</button>
+        </div>
+      </div>
+      <div class="quote-summary">
+        <article><span>En preparación</span><strong id="quotesDraftCount">0</strong></article>
+        <article><span>Enviadas</span><strong id="quotesSentCount">0</strong></article>
+        <article><span>Aceptadas</span><strong id="quotesAcceptedCount">0</strong></article>
+        <article><span>Valor cotizado</span><strong id="quotesTotalValue">$0</strong></article>
+      </div>
+      <div class="filters-row compact">
+        <input id="quoteSearch" class="field-input" type="search" placeholder="Buscar clienta, número o vestido">
+        <select id="quoteStatusFilter" class="field-input">
+          <option value="">Todos los estados</option>
+          <option value="borrador">Borrador</option>
+          <option value="enviada">Enviada</option>
+          <option value="aceptada">Aceptada</option>
+          <option value="rechazada">Rechazada</option>
+          <option value="vencida">Vencida</option>
+          <option value="convertida">Convertida en pedido</option>
+        </select>
+      </div>
+      <div id="quotesTable" class="responsive-table"></div>
     </section>
 
     <section class="content-view" data-view-panel="agenda">
