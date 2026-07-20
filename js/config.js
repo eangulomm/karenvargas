@@ -1,6 +1,6 @@
 window.ATELIER_CONFIG = {
   // Pega aquí la URL /exec de tu despliegue de Google Apps Script.
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwNkqXMqKg2mBfyqpkC1gvwA25f6p5x5KkJi6KL1SaXju4csJ2PV4S-K8Z1UAN5H_68YQ/exec",
+  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbz2Pnc9ljxLek00-wdD0f9SCi0o-Tay_ffVCRCaXzDHUjQ3gmVHx64v6Hvt0vdYAaMpGg/exec",
 
   // Si la URL está vacía, la app usa datos locales para probar todo el CRUD.
   USE_DEMO_DATA_WHEN_EMPTY: true,
