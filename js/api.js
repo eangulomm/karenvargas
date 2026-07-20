@@ -22,6 +22,25 @@ window.AtelierAPI = (() => {
     }, {});
   }
 
+  function normalizeTime(value) {
+    const text = String(value || "").trim();
+    const direct = text.match(/^(\d{1,2}):(\d{2})/);
+    if (direct) return `${String(direct[1]).padStart(2, "0")}:${direct[2]}`;
+    const parsed = new Date(text);
+    if (Number.isNaN(parsed.getTime())) return text;
+    return new Intl.DateTimeFormat(config.LOCALE || "es-CO", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: config.TIME_ZONE || "America/Bogota"
+    }).format(parsed);
+  }
+
+  function normalizeMonth(value) {
+    const match = String(value || "").trim().match(/^(\d{4})-(\d{2})/);
+    return match ? `${match[1]}-${match[2]}` : "";
+  }
+
   function normalizeData(data) {
     return {
       clientes: (data?.clientes || []).map(normalizeRecord),
@@ -29,13 +48,14 @@ window.AtelierAPI = (() => {
         ...normalizeRecord(pedido),
         valorTotal: U.toNumber(pedido.valorTotal),
         primerAbono: U.toNumber(pedido.primerAbono),
-        saldoPendiente: U.toNumber(pedido.saldoPendiente)
+        saldoPendiente: U.toNumber(pedido.saldoPendiente),
+        mesEvento: normalizeMonth(pedido.mesEvento) || U.getMonthKey(pedido.fechaEvento)
       })),
       pagos: (data?.pagos || []).map((pago) => ({
         ...normalizeRecord(pago),
         monto: U.toNumber(pago.monto)
       })),
-      citas: (data?.citas || []).map(normalizeRecord),
+      citas: (data?.citas || []).map((cita) => ({ ...normalizeRecord(cita), hora: normalizeTime(cita.hora) })),
       cotizaciones: (data?.cotizaciones || []).map((cotizacion) => ({
         ...normalizeRecord(cotizacion),
         costos: (() => { try { return JSON.parse(cotizacion.costosJson || "[]"); } catch (error) { return []; } })(),
