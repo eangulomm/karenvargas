@@ -32,8 +32,66 @@ window.AtelierApp = (() => {
   };
 
   async function init() {
-    bindGlobalEvents();
-    const cached = API.getCachedData();
+    bindAuthEvents();
+    if (API.hasRemoteUrl() && !API.hasSession()) {
+      showLogin();
+      return;
+    }
+    await startApplication();
+  }
+
+  function bindAuthEvents() {
+    UI.qs("#loginForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = UI.qs("#loginBtn");
+      const errorBox = UI.qs("#loginError");
+      const username = UI.qs("#loginUsername")?.value.trim();
+      const password = UI.qs("#loginPassword")?.value || "";
+      if (errorBox) errorBox.textContent = "";
+      if (button) { button.disabled = true; button.textContent = "Ingresando..."; }
+      try {
+        await API.login(username, password);
+        if (UI.qs("#loginPassword")) UI.qs("#loginPassword").value = "";
+        hideLogin();
+        await startApplication();
+      } catch (error) {
+        if (errorBox) errorBox.textContent = error.message || "No fue posible iniciar sesión.";
+      } finally {
+        if (button) { button.disabled = false; button.textContent = "Iniciar sesión"; }
+      }
+    });
+
+    UI.qs("#logoutBtn")?.addEventListener("click", async () => {
+      UI.showLoader("Cerrando sesión...");
+      try { await API.logout(); } catch (error) { console.warn("La sesión se cerró localmente.", error); }
+      finally {
+        setData({ clientes: [], pedidos: [], pagos: [], citas: [], cotizaciones: [], catalogoCostos: [] });
+        UI.hideLoader();
+        showLogin();
+      }
+    });
+
+    window.addEventListener("atelier:auth-required", showLogin);
+  }
+
+  function showLogin() {
+    document.body.classList.add("auth-locked");
+    UI.hideLoader();
+    window.setTimeout(() => UI.qs("#loginPassword")?.focus(), 0);
+  }
+
+  function hideLogin() {
+    document.body.classList.remove("auth-locked");
+    const errorBox = UI.qs("#loginError");
+    if (errorBox) errorBox.textContent = "";
+  }
+
+  async function startApplication() {
+    if (!state.globalEventsReady) {
+      bindGlobalEvents();
+      state.globalEventsReady = true;
+    }
+    const cached = API.hasRemoteUrl() ? null : API.getCachedData();
 
     try {
       if (cached) {
@@ -49,10 +107,16 @@ window.AtelierApp = (() => {
       setData(data);
       initModules();
       renderAll();
+      hideLogin();
       if (!API.hasRemoteUrl()) {
         UI.toast("Modo demostración activo", "Configura la URL de Apps Script para guardar en Google Sheets.", "warning");
       }
     } catch (error) {
+      if (error.code === "AUTH_REQUIRED") {
+        API.clearSession();
+        showLogin();
+        return;
+      }
       const fallback = API.getCachedData() || API.getState();
       setData(fallback);
       initModules();
