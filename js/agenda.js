@@ -8,7 +8,7 @@ window.AgendaModule = (() => {
     { value: "realizada", label: "Realizada" },
     { value: "cancelada", label: "Cancelada" }
   ];
-  const TYPES = ["Primera cita", "Toma de medidas", "Primera prueba", "Segunda prueba", "Prueba final", "Entrega", "Otra"];
+  const TYPES = ["Cotización", "Primera cita", "Toma de medidas", "Primera prueba", "Segunda prueba", "Prueba final", "Entrega", "Otra"];
 
   function init() {
     UI.qs("#newAppointmentBtn")?.addEventListener("click", () => openAppointmentModal());
@@ -98,17 +98,23 @@ window.AgendaModule = (() => {
 
   function openAppointmentModal(cita = null, defaults = {}) {
     const clients = window.AtelierApp.state.clientes.slice().sort((a, b) => a.nombre.localeCompare(b.nombre));
-    if (!clients.length) return UI.toast("Primero crea una clienta", "La cita debe quedar asociada a una clienta.", "warning");
     const clientId = cita?.clienteId || defaults.clienteId || "";
+    const startsWithNewClient = !cita && !clients.length;
     const orders = window.AtelierApp.state.enrichedPedidos.filter((order) => !clientId || order.clienteId === clientId);
     const options = (items, value) => items.map((item) => `<option value="${U.escapeHtml(item.value)}" ${item.value === value ? "selected" : ""}>${U.escapeHtml(item.label)}</option>`).join("");
     UI.openModal({
       title: cita ? "Editar cita" : "Nueva cita",
       submitText: cita ? "Guardar cambios" : "Programar cita",
       body: `<div class="form-grid">
-        <div class="form-field"><label>Clienta</label><select class="field-input" name="clienteId" id="appointmentClient" required><option value="">Selecciona</option>${clients.map((client) => `<option value="${U.escapeHtml(client.id)}" ${client.id === clientId ? "selected" : ""}>${U.escapeHtml(client.nombre)}</option>`).join("")}</select></div>
+        <div class="form-field full"><label>Clienta</label><select class="field-input" name="clienteId" id="appointmentClient" required><option value="">Selecciona una clienta registrada</option>${clients.map((client) => `<option value="${U.escapeHtml(client.id)}" ${client.id === clientId ? "selected" : ""}>${U.escapeHtml(client.nombre)}</option>`).join("")}${!cita ? `<option value="__new__" ${startsWithNewClient ? "selected" : ""}>+ Registrar clienta nueva</option>` : ""}</select><span class="form-hint">Si es su primera cotización, puedes registrarla sin crear un pedido.</span></div>
+        ${!cita ? `<div id="quickClientFields" class="form-grid full ${startsWithNewClient ? "" : "is-hidden"}">
+          <div class="form-field"><label>Nombre</label><input class="field-input" name="quickNombres" type="text" autocomplete="given-name"></div>
+          <div class="form-field"><label>Apellidos</label><input class="field-input" name="quickApellidos" type="text" autocomplete="family-name"></div>
+          <div class="form-field"><label>Teléfono / WhatsApp</label><input class="field-input" name="quickTelefono" type="tel" autocomplete="tel"></div>
+          <div class="form-field"><label>Correo (opcional)</label><input class="field-input" name="quickCorreo" type="email" autocomplete="email"></div>
+        </div>` : ""}
         <div class="form-field"><label>Pedido relacionado</label><select class="field-input" name="pedidoId" id="appointmentOrder"><option value="">Sin pedido</option>${orders.map((order) => `<option value="${U.escapeHtml(order.id)}" ${order.id === (cita?.pedidoId || defaults.pedidoId) ? "selected" : ""}>${U.escapeHtml(order.tipoVestido)}</option>`).join("")}</select></div>
-        <div class="form-field"><label>Tipo</label><select class="field-input" name="tipo">${options(TYPES.map((value) => ({ value, label: value })), cita?.tipo || defaults.tipo || "Primera cita")}</select></div>
+        <div class="form-field"><label>Tipo</label><select class="field-input" name="tipo">${options(TYPES.map((value) => ({ value, label: value })), cita?.tipo || defaults.tipo || "Cotización")}</select></div>
         <div class="form-field"><label>Estado</label><select class="field-input" name="estado">${options(STATUSES, cita?.estado || "programada")}</select></div>
         <div class="form-field"><label>Fecha</label><input class="field-input" name="fecha" type="date" value="${U.escapeHtml(cita?.fecha || defaults.fecha || "")}" required></div>
         <div class="form-field"><label>Hora</label><input class="field-input" name="hora" type="time" value="${U.escapeHtml(cita?.hora || defaults.hora || "09:00")}" required></div>
@@ -120,15 +126,53 @@ window.AgendaModule = (() => {
         const payload = UI.getFormData(form);
         const conflict = window.AtelierApp.state.citas.find((item) => item.id !== cita?.id && item.fecha === payload.fecha && item.hora === payload.hora && item.estado !== "cancelada");
         if (conflict) throw new Error("Ya existe una cita programada a esa fecha y hora.");
-        if (cita) await API.updateCita(cita.id, payload); else await API.createCita(payload);
+        if (cita) {
+          await API.updateCita(cita.id, payload);
+        } else if (payload.clienteId === "__new__") {
+          const nombres = payload.quickNombres?.trim();
+          const apellidos = payload.quickApellidos?.trim();
+          const telefono = payload.quickTelefono?.trim();
+          if (!nombres) throw new Error("Escribe el nombre de la nueva clienta.");
+          if (!apellidos) throw new Error("Escribe los apellidos de la nueva clienta.");
+          if (!telefono) throw new Error("Escribe el teléfono de la nueva clienta.");
+
+          const newClientId = U.createId("cli");
+          await API.createCliente({
+            id: newClientId,
+            nombres,
+            apellidos,
+            nombre: `${nombres} ${apellidos}`,
+            telefono,
+            correo: payload.quickCorreo?.trim() || "",
+            notas: "Registrada desde la agenda para una primera cita."
+          });
+          try {
+            await API.createCita({ ...payload, clienteId: newClientId, pedidoId: "" });
+          } catch (error) {
+            try { await API.deleteCliente(newClientId); } catch (cleanupError) { console.warn("No se pudo revertir la clienta creada.", cleanupError); }
+            throw error;
+          }
+        } else {
+          await API.createCita(payload);
+        }
         await window.AtelierApp.afterMutation(cita ? "Cita actualizada" : "Cita programada");
       }
     });
-    UI.qs("#appointmentClient")?.addEventListener("change", (event) => {
+    const clientSelect = UI.qs("#appointmentClient");
+    const updateClientMode = () => {
+      const isNew = clientSelect?.value === "__new__";
+      const quickFields = UI.qs("#quickClientFields");
+      quickFields?.classList.toggle("is-hidden", !isNew);
+      quickFields?.querySelectorAll("input").forEach((input) => {
+        input.required = isNew && input.name !== "quickCorreo";
+      });
       const select = UI.qs("#appointmentOrder");
-      const related = window.AtelierApp.state.enrichedPedidos.filter((order) => order.clienteId === event.target.value);
+      const related = isNew ? [] : window.AtelierApp.state.enrichedPedidos.filter((order) => order.clienteId === clientSelect?.value);
       select.innerHTML = `<option value="">Sin pedido</option>${related.map((order) => `<option value="${U.escapeHtml(order.id)}">${U.escapeHtml(order.tipoVestido)}</option>`).join("")}`;
-    });
+      select.disabled = isNew;
+    };
+    clientSelect?.addEventListener("change", updateClientMode);
+    if (!cita) updateClientMode();
   }
 
   function confirmDelete(cita) {
