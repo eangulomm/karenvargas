@@ -29,15 +29,23 @@ window.AtelierAPI = (() => {
   }
 
   async function login(username, password) {
-    const result = await requestPost("login", { username, password }, { skipSession: true });
+    const challenge = await requestJsonp("authChallenge", { username });
+    const passwordHash = await hashText(`${challenge.data.salt}${password}`);
+    const response = await hashText(`${passwordHash}${challenge.data.nonce}`);
+    const result = await requestJsonp("loginChallenge", { username, nonce: challenge.data.nonce, response });
     U.writeStorage(config.SESSION_STORAGE_KEY, result.data);
     return result.data;
   }
 
+  async function hashText(value) {
+    const bytes = new TextEncoder().encode(String(value || ""));
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
   async function logout() {
-    const session = getSession();
     try {
-      if (session?.sessionToken) await requestPost("logout", { sessionToken: session.sessionToken }, { skipSession: true });
+      if (getSession()?.sessionToken) await request("logout");
     } finally {
       clearSession();
     }
@@ -183,7 +191,7 @@ window.AtelierAPI = (() => {
     }
   }
 
-  function requestJsonp(action, payload = {}, originalError) {
+  function requestJsonp(action, payload = {}, originalError = new Error("No se pudo conectar con Apps Script.")) {
     return new Promise((resolve, reject) => {
       if (typeof document === "undefined" || !document.createElement) {
         reject(originalError);

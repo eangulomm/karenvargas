@@ -25,7 +25,6 @@ const ATELIER_MONTH_FIELDS = ["mesEvento"];
 const ATELIER_LOGIN_USER = "karenvargas";
 const ATELIER_DEFAULT_PASSWORD_SALT = "b15806bf08225463af6a837f72e9b9b0a6b04820c3d20f94";
 const ATELIER_DEFAULT_PASSWORD_HASH = "7cb3d3570c31f5466d84afce34674a7de1cf69a07a73b68b5f488ade69d0fefb";
-const ATELIER_GET_ACTIONS = ["ping"];
 const ATELIER_SESSION_DAYS = 30;
 const ATELIER_MAX_LOGIN_ATTEMPTS = 5;
 const ATELIER_LOGIN_LOCK_SECONDS = 900;
@@ -38,9 +37,6 @@ function doGet(e) {
     const params = e && e.parameter ? Object.assign({}, e.parameter) : {};
     const action = params.action || "ping";
     callback = sanitizeCallback_(params.callback || "");
-    if (ATELIER_GET_ACTIONS.indexOf(action) < 0) {
-      throw new Error("Esta operación requiere una solicitud segura.");
-    }
     let payload = {};
 
     if (params.payload) {
@@ -172,6 +168,8 @@ function handleAction_(action, payload) {
   if (action === "ping") {
     return { ok: true, message: "Atelier API activa", data: { timestamp: new Date().toISOString() } };
   }
+  if (action === "authChallenge") return createAuthChallenge_(payload || {});
+  if (action === "loginChallenge") return loginWithChallenge_(payload || {});
   if (action === "login") return login_(payload || {});
   const session = requireSession_(payload && payload.sessionToken);
   if (action === "logout") return logout_(payload.sessionToken, session);
@@ -248,23 +246,73 @@ function login_(payload) {
   const salt = customized ? props.getProperty("ATELIER_PASSWORD_SALT") : ATELIER_DEFAULT_PASSWORD_SALT;
   const expectedHash = customized ? props.getProperty("ATELIER_PASSWORD_HASH") : ATELIER_DEFAULT_PASSWORD_HASH;
 
-  const attemptKey = "atelier_login_" + hashText_(username).slice(0, 24);
-  const cache = CacheService.getScriptCache();
-  const attempts = Number(cache.get(attemptKey) || 0);
-  if (attempts >= ATELIER_MAX_LOGIN_ATTEMPTS) {
-    throw authError_("Demasiados intentos. Espera 15 minutos antes de volver a intentar.", "AUTH_LOCKED");
-  }
-
   const configuredUser = String(props.getProperty("ATELIER_LOGIN_USER") || ATELIER_LOGIN_USER).toLowerCase().trim();
   const validUser = constantTimeEquals_(username, configuredUser);
   const validPassword = constantTimeEquals_(hashText_(salt + password), expectedHash);
   if (!validUser || !validPassword) {
-    cache.put(attemptKey, String(attempts + 1), ATELIER_LOGIN_LOCK_SECONDS);
-    throw authError_("Correo o contraseña incorrectos.", "AUTH_INVALID");
+    registerFailedLogin_(username);
+    throw authError_("Usuario o contraseña incorrectos.", "AUTH_INVALID");
   }
+  return createSession_(configuredUser);
+}
 
-  cache.remove(attemptKey);
+function createAuthChallenge_(payload) {
+  const username = String(payload.username || "").toLowerCase().trim();
+  assertLoginAvailable_(username);
+  const props = PropertiesService.getScriptProperties();
+  const customized = props.getProperty("ATELIER_PASSWORD_CUSTOMIZED") === "YES";
+  const salt = customized ? props.getProperty("ATELIER_PASSWORD_SALT") : ATELIER_DEFAULT_PASSWORD_SALT;
+  const nonce = randomToken_();
+  CacheService.getScriptCache().put("atelier_challenge_" + hashText_(nonce), JSON.stringify({ username }), 180);
+  return { ok: true, data: { nonce, salt } };
+}
+
+function loginWithChallenge_(payload) {
+  const username = String(payload.username || "").toLowerCase().trim();
+  const nonce = String(payload.nonce || "");
+  const response = String(payload.response || "");
+  assertLoginAvailable_(username);
+  const cache = CacheService.getScriptCache();
+  const challengeKey = "atelier_challenge_" + hashText_(nonce);
+  const raw = cache.get(challengeKey);
+  cache.remove(challengeKey);
+  let challenge;
+  try { challenge = JSON.parse(raw || "null"); } catch (error) { challenge = null; }
+  if (!challenge || !constantTimeEquals_(challenge.username, username)) {
+    registerFailedLogin_(username);
+    throw authError_("El intento de acceso venció. Inténtalo nuevamente.", "AUTH_INVALID");
+  }
+  const props = PropertiesService.getScriptProperties();
+  const customized = props.getProperty("ATELIER_PASSWORD_CUSTOMIZED") === "YES";
+  const expectedHash = customized ? props.getProperty("ATELIER_PASSWORD_HASH") : ATELIER_DEFAULT_PASSWORD_HASH;
+  const configuredUser = String(props.getProperty("ATELIER_LOGIN_USER") || ATELIER_LOGIN_USER).toLowerCase().trim();
+  if (!constantTimeEquals_(username, configuredUser) || !constantTimeEquals_(response, hashText_(expectedHash + nonce))) {
+    registerFailedLogin_(username);
+    throw authError_("Usuario o contraseña incorrectos.", "AUTH_INVALID");
+  }
+  return createSession_(configuredUser);
+}
+
+function assertLoginAvailable_(username) {
+  const attempts = Number(CacheService.getScriptCache().get(loginAttemptKey_(username)) || 0);
+  if (attempts >= ATELIER_MAX_LOGIN_ATTEMPTS) throw authError_("Demasiados intentos. Espera 15 minutos antes de volver a intentar.", "AUTH_LOCKED");
+}
+
+function registerFailedLogin_(username) {
+  const cache = CacheService.getScriptCache();
+  const key = loginAttemptKey_(username);
+  const attempts = Number(cache.get(key) || 0);
+  cache.put(key, String(attempts + 1), ATELIER_LOGIN_LOCK_SECONDS);
+}
+
+function loginAttemptKey_(username) {
+  return "atelier_login_" + hashText_(username).slice(0, 24);
+}
+
+function createSession_(configuredUser) {
+  CacheService.getScriptCache().remove(loginAttemptKey_(configuredUser));
   cleanupExpiredSessions_();
+  const props = PropertiesService.getScriptProperties();
   const token = randomToken_() + randomToken_();
   const expiresAt = Date.now() + ATELIER_SESSION_DAYS * 86400000;
   props.setProperty(sessionKey_(token), JSON.stringify({ username: configuredUser, expiresAt }));
