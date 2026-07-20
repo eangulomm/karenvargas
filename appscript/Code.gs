@@ -1,17 +1,18 @@
 const ATELIER_HEADERS = {
-  Clientes: ["id", "nombre", "telefono", "instagram", "correo", "direccion", "notas", "fechaRegistro"],
+  Clientes: ["id", "nombres", "apellidos", "nombre", "telefono", "instagram", "correo", "direccion", "notas", "fechaRegistro"],
   Pedidos: [
     "id", "clienteId", "tipoVestido", "descripcion", "valorTotal", "primerAbono",
     "saldoPendiente", "fechaEvento", "fechaLimitePago", "fechaEntrega", "estado",
     "estadoPago", "notasInternas", "referencias", "primerPagoId", "mesEvento", "fechaCreacion", "fechaActualizacion"
   ],
   Pagos: ["id", "pedidoId", "clienteId", "fechaPago", "monto", "metodo", "concepto", "notas", "esPrimerAbono", "fechaRegistro"],
+  Citas: ["id", "clienteId", "pedidoId", "tipo", "fecha", "hora", "duracion", "estado", "notas", "modificaciones", "fechaRegistro", "fechaActualizacion"],
   Configuracion: ["clave", "valor", "descripcion"]
 };
 
-const ATELIER_SCHEMA_VERSION = "2026-07-06.3";
+const ATELIER_SCHEMA_VERSION = "2026-07-20.3";
 const ATELIER_NUMERIC_FIELDS = ["valorTotal", "primerAbono", "saldoPendiente", "monto"];
-const ATELIER_DATE_FIELDS = ["fechaRegistro", "fechaEvento", "fechaLimitePago", "fechaEntrega", "fechaCreacion", "fechaActualizacion", "fechaPago"];
+const ATELIER_DATE_FIELDS = ["fechaRegistro", "fechaEvento", "fechaLimitePago", "fechaEntrega", "fechaCreacion", "fechaActualizacion", "fechaPago", "fecha"];
 let ATELIER_SETUP_READY = false;
 let ATELIER_ROWS_CACHE = {};
 
@@ -151,6 +152,12 @@ function handleAction_(action, payload) {
         return registerPago_(payload.pago || payload);
       case "deletePago":
         return deletePago_(payload.id);
+      case "createCita":
+        return createCita_(payload.cita || payload);
+      case "updateCita":
+        return updateCita_(payload.id, payload.cita || payload);
+      case "deleteCita":
+        return deleteCita_(payload.id);
       case "getDashboard":
         return getDashboard_();
       case "getAgendaPorMes":
@@ -166,7 +173,10 @@ function handleAction_(action, payload) {
 function createCliente_(cliente) {
   setup_();
   const clean = cleanRecord_(cliente || {});
-  if (!clean.nombre) throw new Error("El nombre de la clienta es obligatorio.");
+  clean.nombres = clean.nombres || clean.nombre;
+  clean.apellidos = clean.apellidos || "";
+  clean.nombre = [clean.nombres, clean.apellidos].filter(Boolean).join(" ").trim();
+  if (!clean.nombres) throw new Error("El nombre de la clienta es obligatorio.");
   if (!clean.telefono) throw new Error("El teléfono de la clienta es obligatorio.");
   const id = clean.id || makeId_("cli");
 
@@ -182,6 +192,8 @@ function createCliente_(cliente) {
 
   appendRecord_("Clientes", {
     id,
+    nombres: clean.nombres,
+    apellidos: clean.apellidos,
     nombre: clean.nombre,
     telefono: clean.telefono,
     instagram: clean.instagram,
@@ -198,10 +210,15 @@ function updateCliente_(id, cliente) {
   setup_();
   if (!id) throw new Error("Falta el ID de la clienta.");
   const clean = cleanRecord_(cliente || {});
-  if (!clean.nombre) throw new Error("El nombre de la clienta es obligatorio.");
+  clean.nombres = clean.nombres || clean.nombre;
+  clean.apellidos = clean.apellidos || "";
+  clean.nombre = [clean.nombres, clean.apellidos].filter(Boolean).join(" ").trim();
+  if (!clean.nombres) throw new Error("El nombre de la clienta es obligatorio.");
   if (!clean.telefono) throw new Error("El teléfono de la clienta es obligatorio.");
 
   updateRecord_("Clientes", id, {
+    nombres: clean.nombres,
+    apellidos: clean.apellidos,
     nombre: clean.nombre,
     telefono: clean.telefono,
     instagram: clean.instagram,
@@ -234,6 +251,9 @@ function deleteCliente_(id) {
   });
   deleteWhere_("Pedidos", function(pedido) {
     return pedido.clienteId === id;
+  });
+  deleteWhere_("Citas", function(cita) {
+    return cita.clienteId === id;
   });
   deleteRecord_("Clientes", id);
 
@@ -324,6 +344,9 @@ function deletePedido_(id) {
 
   deleteWhere_("Pagos", function(pago) {
     return pago.pedidoId === id;
+  });
+  deleteWhere_("Citas", function(cita) {
+    return cita.pedidoId === id;
   });
   deleteRecord_("Pedidos", id);
 
@@ -434,8 +457,49 @@ function getAllData_() {
   return {
     clientes: readRows_("Clientes"),
     pedidos: readRows_("Pedidos"),
-    pagos: readRows_("Pagos")
+    pagos: readRows_("Pagos"),
+    citas: readRows_("Citas")
   };
+}
+
+function createCita_(cita) {
+  setup_();
+  const clean = cleanRecord_(cita || {});
+  if (!clean.clienteId || !findById_("Clientes", clean.clienteId)) throw new Error("Selecciona una clienta válida.");
+  if (!clean.fecha || !clean.hora) throw new Error("La fecha y la hora son obligatorias.");
+  const id = clean.id || makeId_("cita");
+  appendRecord_("Citas", {
+    id,
+    clienteId: clean.clienteId,
+    pedidoId: clean.pedidoId,
+    tipo: clean.tipo || "Prueba",
+    fecha: clean.fecha,
+    hora: clean.hora,
+    duracion: clean.duracion || "60",
+    estado: clean.estado || "programada",
+    notas: clean.notas,
+    modificaciones: clean.modificaciones,
+    fechaRegistro: today_(),
+    fechaActualizacion: today_()
+  });
+  return { ok: true, message: "Cita creada", data: { record: findById_("Citas", id) } };
+}
+
+function updateCita_(id, cita) {
+  setup_();
+  if (!id || !findById_("Citas", id)) throw new Error("No se encontró la cita.");
+  const clean = cleanRecord_(cita || {});
+  if (!clean.clienteId || !findById_("Clientes", clean.clienteId)) throw new Error("Selecciona una clienta válida.");
+  if (!clean.fecha || !clean.hora) throw new Error("La fecha y la hora son obligatorias.");
+  updateRecord_("Citas", id, Object.assign({}, clean, { fechaActualizacion: today_() }));
+  return { ok: true, message: "Cita actualizada", data: { record: findById_("Citas", id) } };
+}
+
+function deleteCita_(id) {
+  setup_();
+  if (!id || !findById_("Citas", id)) return { ok: true, message: "Cita ya eliminada", data: { id } };
+  deleteRecord_("Citas", id);
+  return { ok: true, message: "Cita eliminada", data: { id } };
 }
 
 function setup_() {

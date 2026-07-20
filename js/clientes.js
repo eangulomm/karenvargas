@@ -39,6 +39,7 @@ window.ClientesModule = (() => {
     const clients = appState.clientes
       .filter((client) => U.matchesSearch([
         client.nombre,
+        client.apellidos,
         client.telefono,
         client.instagram,
         client.correo,
@@ -108,7 +109,8 @@ window.ClientesModule = (() => {
       submitText: isEdit ? "Guardar cambios" : "Crear clienta",
       body: `
         <div class="form-grid">
-          ${field("Nombre completo", "nombre", client?.nombre, "text", true)}
+          ${field("Nombre", "nombres", client?.nombres || client?.nombre, "text", true)}
+          ${field("Apellidos", "apellidos", client?.apellidos, "text", true)}
           ${field("Teléfono / WhatsApp", "telefono", client?.telefono, "tel", true)}
           ${field("Instagram", "instagram", client?.instagram, "text")}
           ${field("Correo", "correo", client?.correo, "email")}
@@ -121,8 +123,10 @@ window.ClientesModule = (() => {
       `,
       onSubmit: async (form) => {
         const payload = UI.getFormData(form);
-        if (!payload.nombre?.trim()) throw new Error("El nombre es obligatorio.");
+        if (!payload.nombres?.trim()) throw new Error("El nombre es obligatorio.");
+        if (!payload.apellidos?.trim()) throw new Error("Los apellidos son obligatorios.");
         if (!payload.telefono?.trim()) throw new Error("El teléfono es obligatorio.");
+        payload.nombre = `${payload.nombres.trim()} ${payload.apellidos.trim()}`.trim();
 
         if (isEdit) await API.updateCliente(client.id, payload);
         else await API.createCliente(payload);

@@ -595,6 +595,19 @@
   font-size: 13px;
 }
 
+.agenda-info .appointment-note,
+.agenda-info .appointment-changes {
+  margin-top: 8px;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  background: rgba(248, 244, 239, 0.9);
+}
+
+.agenda-info .appointment-changes {
+  border-left: 3px solid var(--color-gold);
+  color: var(--color-ink);
+}
+
 .empty-state {
   padding: 28px;
   color: var(--color-muted);

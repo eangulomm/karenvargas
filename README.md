@@ -36,6 +36,8 @@ El archivo de Google Sheets debe tener estas hojas y columnas. El script tambié
 | Columna | Descripción |
 | --- | --- |
 | id | ID único de la clienta |
+| nombres | Nombres de la clienta |
+| apellidos | Apellidos de la clienta |
 | nombre | Nombre completo |
 | telefono | Teléfono o WhatsApp |
 | instagram | Usuario de Instagram |
@@ -80,6 +82,23 @@ El archivo de Google Sheets debe tener estas hojas y columnas. El script tambié
 | notas | Observaciones |
 | esPrimerAbono | SI o NO |
 | fechaRegistro | Fecha de registro |
+
+### Citas
+
+| Columna | Descripción |
+| --- | --- |
+| id | ID único de la cita |
+| clienteId | Clienta asociada |
+| pedidoId | Pedido relacionado, si aplica |
+| tipo | Primera cita, toma de medidas, prueba o entrega |
+| fecha | Día de la cita |
+| hora | Hora de inicio |
+| duracion | Duración estimada en minutos |
+| estado | programada, confirmada, realizada o cancelada |
+| notas | Indicaciones para la cita |
+| modificaciones | Ajustes solicitados o pendientes detectados en la cita |
+| fechaRegistro | Fecha de creación |
+| fechaActualizacion | Última actualización |
 
 ### Configuracion
 

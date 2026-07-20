@@ -5,7 +5,8 @@ window.AtelierAPI = (() => {
   let state = {
     clientes: [],
     pedidos: [],
-    pagos: []
+    pagos: [],
+    citas: []
   };
 
   function hasRemoteUrl() {
@@ -31,7 +32,8 @@ window.AtelierAPI = (() => {
       pagos: (data?.pagos || []).map((pago) => ({
         ...normalizeRecord(pago),
         monto: U.toNumber(pago.monto)
-      }))
+      })),
+      citas: (data?.citas || []).map(normalizeRecord)
     };
   }
 
@@ -173,7 +175,7 @@ window.AtelierAPI = (() => {
     }
 
     if (config.USE_DEMO_DATA_WHEN_EMPTY) return getLocalData();
-    return applyData({ clientes: [], pedidos: [], pagos: [] });
+    return applyData({ clientes: [], pedidos: [], pagos: [], citas: [] });
   }
 
   async function mutate(action, payload, localMutation) {
@@ -240,7 +242,9 @@ window.AtelierAPI = (() => {
   function createCliente(cliente) {
     const record = {
       id: cliente.id || U.createId("cli"),
-      nombre: cliente.nombre?.trim(),
+      nombres: cliente.nombres?.trim() || cliente.nombre?.trim(),
+      apellidos: cliente.apellidos?.trim() || "",
+      nombre: cliente.nombre?.trim() || `${cliente.nombres || ""} ${cliente.apellidos || ""}`.trim(),
       telefono: cliente.telefono?.trim(),
       instagram: cliente.instagram?.trim(),
       correo: cliente.correo?.trim(),
@@ -268,6 +272,7 @@ window.AtelierAPI = (() => {
       state.clientes = state.clientes.filter((cliente) => cliente.id !== id);
       state.pedidos = state.pedidos.filter((pedido) => pedido.clienteId !== id);
       state.pagos = state.pagos.filter((pago) => !orderIds.includes(pago.pedidoId));
+      state.citas = state.citas.filter((cita) => cita.clienteId !== id);
     });
   }
 
@@ -333,6 +338,7 @@ window.AtelierAPI = (() => {
     return mutate("deletePedido", { id }, () => {
       state.pedidos = state.pedidos.filter((pedido) => pedido.id !== id);
       state.pagos = state.pagos.filter((pago) => pago.pedidoId !== id);
+      state.citas = state.citas.filter((cita) => cita.pedidoId !== id);
     });
   }
 
@@ -363,6 +369,38 @@ window.AtelierAPI = (() => {
       const pago = state.pagos.find((item) => item.id === id);
       state.pagos = state.pagos.filter((item) => item.id !== id);
       if (pago) recalculateOrder(pago.pedidoId);
+    });
+  }
+
+  function createCita(cita) {
+    const record = {
+      id: cita.id || U.createId("cita"),
+      clienteId: cita.clienteId,
+      pedidoId: cita.pedidoId || "",
+      tipo: cita.tipo || "Prueba",
+      fecha: cita.fecha,
+      hora: cita.hora,
+      duracion: cita.duracion || "60",
+      estado: cita.estado || "programada",
+      notas: cita.notas?.trim() || "",
+      modificaciones: cita.modificaciones?.trim() || "",
+      fechaRegistro: U.todayISO(),
+      fechaActualizacion: U.todayISO()
+    };
+    return mutate("createCita", { cita: record }, () => state.citas.push(record));
+  }
+
+  function updateCita(id, cita) {
+    return mutate("updateCita", { id, cita }, () => {
+      const index = state.citas.findIndex((item) => item.id === id);
+      if (index < 0) throw new Error("No se encontró la cita.");
+      state.citas[index] = { ...state.citas[index], ...cita, id, fechaActualizacion: U.todayISO() };
+    });
+  }
+
+  function deleteCita(id) {
+    return mutate("deleteCita", { id }, () => {
+      state.citas = state.citas.filter((item) => item.id !== id);
     });
   }
 
@@ -552,7 +590,7 @@ window.AtelierAPI = (() => {
       }
     ];
 
-    return { clientes, pedidos, pagos };
+    return { clientes, pedidos, pagos, citas: [] };
   }
 
   return {
@@ -565,6 +603,9 @@ window.AtelierAPI = (() => {
     deletePedido,
     registerPago,
     deletePago,
+    createCita,
+    updateCita,
+    deleteCita,
     hasRemoteUrl,
     getCachedData,
     getState: () => U.clone(state)
