@@ -22,6 +22,11 @@ const ATELIER_NUMERIC_FIELDS = ["valorTotal", "primerAbono", "saldoPendiente", "
 const ATELIER_DATE_FIELDS = ["fechaRegistro", "fechaEvento", "fechaLimitePago", "fechaEntrega", "fechaCreacion", "fechaActualizacion", "fechaPago", "fecha"];
 const ATELIER_TIME_FIELDS = ["hora"];
 const ATELIER_MONTH_FIELDS = ["mesEvento"];
+const ATELIER_LOGIN_EMAIL = "atelierkarenvargas@gmail.com";
+const ATELIER_GET_ACTIONS = ["ping"];
+const ATELIER_SESSION_DAYS = 30;
+const ATELIER_MAX_LOGIN_ATTEMPTS = 5;
+const ATELIER_LOGIN_LOCK_SECONDS = 900;
 let ATELIER_SETUP_READY = false;
 let ATELIER_ROWS_CACHE = {};
 
@@ -30,7 +35,10 @@ function doGet(e) {
   try {
     const params = e && e.parameter ? Object.assign({}, e.parameter) : {};
     const action = params.action || "ping";
-    callback = params.callback || "";
+    callback = sanitizeCallback_(params.callback || "");
+    if (ATELIER_GET_ACTIONS.indexOf(action) < 0) {
+      throw new Error("Esta operación requiere una solicitud segura.");
+    }
     let payload = {};
 
     if (params.payload) {
@@ -44,7 +52,7 @@ function doGet(e) {
     const result = handleAction_(action, payload);
     return jsonResponse_(result, callback);
   } catch (error) {
-    return jsonResponse_({ ok: false, message: error.message }, callback);
+    return jsonResponse_({ ok: false, message: error.message, code: error.code || "" }, callback);
   }
 }
 
@@ -56,7 +64,7 @@ function doPost(e) {
     const result = handleAction_(action, payload);
     return jsonResponse_(result);
   } catch (error) {
-    return jsonResponse_({ ok: false, message: error.message });
+    return jsonResponse_({ ok: false, message: error.message, code: error.code || "" });
   }
 }
 
@@ -64,7 +72,41 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("Atelier")
     .addItem("Preparar hojas", "setup")
+    .addSeparator()
+    .addItem("Configurar contraseña", "configurarAcceso")
+    .addItem("Cerrar todas las sesiones", "cerrarTodasLasSesiones")
     .addToUi();
+}
+
+function configurarAcceso() {
+  const ui = SpreadsheetApp.getUi();
+  const first = ui.prompt("Configurar acceso", "Escribe una contraseña de al menos 10 caracteres.", ui.ButtonSet.OK_CANCEL);
+  if (first.getSelectedButton() !== ui.Button.OK) return;
+  const password = first.getResponseText();
+  if (password.length < 10) {
+    ui.alert("La contraseña debe tener al menos 10 caracteres.");
+    return;
+  }
+  const second = ui.prompt("Confirmar contraseña", "Escribe nuevamente la misma contraseña.", ui.ButtonSet.OK_CANCEL);
+  if (second.getSelectedButton() !== ui.Button.OK) return;
+  if (password !== second.getResponseText()) {
+    ui.alert("Las contraseñas no coinciden.");
+    return;
+  }
+  const props = PropertiesService.getScriptProperties();
+  const salt = randomToken_();
+  props.setProperties({
+    ATELIER_LOGIN_EMAIL: ATELIER_LOGIN_EMAIL,
+    ATELIER_PASSWORD_SALT: salt,
+    ATELIER_PASSWORD_HASH: hashText_(salt + password)
+  });
+  clearSessions_();
+  ui.alert("Acceso configurado", "La contraseña quedó guardada de forma protegida. Todas las sesiones anteriores fueron cerradas.", ui.ButtonSet.OK);
+}
+
+function cerrarTodasLasSesiones() {
+  clearSessions_();
+  SpreadsheetApp.getUi().alert("Todas las sesiones del sistema fueron cerradas.");
 }
 
 function setup() {
@@ -124,13 +166,17 @@ function obtenerAgendaPorMes(mesEvento) {
 }
 
 function handleAction_(action, payload) {
+  if (action === "ping") {
+    return { ok: true, message: "Atelier API activa", data: { timestamp: new Date().toISOString() } };
+  }
+  if (action === "login") return login_(payload || {});
+  const session = requireSession_(payload && payload.sessionToken);
+  if (action === "logout") return logout_(payload.sessionToken, session);
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
 
   try {
     switch (action) {
-      case "ping":
-        return { ok: true, message: "Atelier API activa", data: { timestamp: new Date().toISOString() } };
       case "setup":
         setup_();
         return { ok: true, message: "Hojas preparadas", data: getAllData_() };
@@ -189,6 +235,115 @@ function handleAction_(action, payload) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function login_(payload) {
+  const email = String(payload.email || "").toLowerCase().trim();
+  const password = String(payload.password || "");
+  const props = PropertiesService.getScriptProperties();
+  const salt = props.getProperty("ATELIER_PASSWORD_SALT");
+  const expectedHash = props.getProperty("ATELIER_PASSWORD_HASH");
+  if (!salt || !expectedHash) throw authError_("La contraseña todavía no ha sido configurada en el Google Sheet.", "AUTH_NOT_CONFIGURED");
+
+  const attemptKey = "atelier_login_" + hashText_(email).slice(0, 24);
+  const cache = CacheService.getScriptCache();
+  const attempts = Number(cache.get(attemptKey) || 0);
+  if (attempts >= ATELIER_MAX_LOGIN_ATTEMPTS) {
+    throw authError_("Demasiados intentos. Espera 15 minutos antes de volver a intentar.", "AUTH_LOCKED");
+  }
+
+  const configuredEmail = String(props.getProperty("ATELIER_LOGIN_EMAIL") || ATELIER_LOGIN_EMAIL).toLowerCase().trim();
+  const validEmail = constantTimeEquals_(email, configuredEmail);
+  const validPassword = constantTimeEquals_(hashText_(salt + password), expectedHash);
+  if (!validEmail || !validPassword) {
+    cache.put(attemptKey, String(attempts + 1), ATELIER_LOGIN_LOCK_SECONDS);
+    throw authError_("Correo o contraseña incorrectos.", "AUTH_INVALID");
+  }
+
+  cache.remove(attemptKey);
+  cleanupExpiredSessions_();
+  const token = randomToken_() + randomToken_();
+  const expiresAt = Date.now() + ATELIER_SESSION_DAYS * 86400000;
+  props.setProperty(sessionKey_(token), JSON.stringify({ email: configuredEmail, expiresAt }));
+  return { ok: true, message: "Sesión iniciada", data: { sessionToken: token, email: configuredEmail, expiresAt } };
+}
+
+function requireSession_(token) {
+  if (!token) throw authError_("Debes iniciar sesión para continuar.", "AUTH_REQUIRED");
+  const props = PropertiesService.getScriptProperties();
+  const key = sessionKey_(token);
+  const raw = props.getProperty(key);
+  if (!raw) throw authError_("La sesión no es válida o ya fue cerrada.", "AUTH_REQUIRED");
+  let session;
+  try { session = JSON.parse(raw); } catch (error) { session = null; }
+  if (!session || Number(session.expiresAt) <= Date.now()) {
+    props.deleteProperty(key);
+    throw authError_("La sesión venció. Inicia sesión nuevamente.", "AUTH_REQUIRED");
+  }
+  return session;
+}
+
+function logout_(token, session) {
+  PropertiesService.getScriptProperties().deleteProperty(sessionKey_(token));
+  return { ok: true, message: "Sesión cerrada", data: { email: session.email } };
+}
+
+function authError_(message, code) {
+  const error = new Error(message);
+  error.code = code || "AUTH_REQUIRED";
+  return error;
+}
+
+function sessionKey_(token) {
+  return "ATELIER_SESSION_" + hashText_(String(token || ""));
+}
+
+function randomToken_() {
+  return Utilities.getUuid().replace(/-/g, "") + String(Math.random()).slice(2);
+}
+
+function hashText_(value) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value || ""), Utilities.Charset.UTF_8)
+    .map(function(byte) { return (byte + 256).toString(16).slice(-2); })
+    .join("");
+}
+
+function constantTimeEquals_(left, right) {
+  const a = String(left || "");
+  const b = String(right || "");
+  let mismatch = a.length ^ b.length;
+  const length = Math.max(a.length, b.length);
+  for (let index = 0; index < length; index += 1) mismatch |= (a.charCodeAt(index) || 0) ^ (b.charCodeAt(index) || 0);
+  return mismatch === 0;
+}
+
+function cleanupExpiredSessions_() {
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties();
+  Object.keys(all).forEach(function(key) {
+    if (key.indexOf("ATELIER_SESSION_") !== 0) return;
+    try {
+      if (Number(JSON.parse(all[key]).expiresAt) <= Date.now()) props.deleteProperty(key);
+    } catch (error) {
+      props.deleteProperty(key);
+    }
+  });
+}
+
+function clearSessions_() {
+  const props = PropertiesService.getScriptProperties();
+  Object.keys(props.getProperties()).forEach(function(key) {
+    if (key.indexOf("ATELIER_SESSION_") === 0) props.deleteProperty(key);
+  });
+}
+
+function sanitizeCallback_(callback) {
+  const value = String(callback || "").trim();
+  if (!value) return "";
+  if (!/^[A-Za-z_$][0-9A-Za-z_$]{0,80}$/.test(value)) {
+    throw new Error("Callback no válido.");
+  }
+  return value;
 }
 
 function createCliente_(cliente) {

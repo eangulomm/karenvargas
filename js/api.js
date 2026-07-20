@@ -15,6 +15,34 @@ window.AtelierAPI = (() => {
     return Boolean(config.APPS_SCRIPT_URL && config.APPS_SCRIPT_URL.trim());
   }
 
+  function getSession() {
+    return U.readStorage(config.SESSION_STORAGE_KEY, null);
+  }
+
+  function hasSession() {
+    const session = getSession();
+    return Boolean(session?.sessionToken && Number(session.expiresAt) > Date.now());
+  }
+
+  function clearSession() {
+    localStorage.removeItem(config.SESSION_STORAGE_KEY);
+  }
+
+  async function login(email, password) {
+    const result = await requestPost("login", { email, password }, { skipSession: true });
+    U.writeStorage(config.SESSION_STORAGE_KEY, result.data);
+    return result.data;
+  }
+
+  async function logout() {
+    const session = getSession();
+    try {
+      if (session?.sessionToken) await requestPost("logout", { sessionToken: session.sessionToken }, { skipSession: true });
+    } finally {
+      clearSession();
+    }
+  }
+
   function normalizeRecord(record) {
     return Object.entries(record || {}).reduce((acc, [key, value]) => {
       acc[key] = value == null ? "" : value;
@@ -114,7 +142,7 @@ window.AtelierAPI = (() => {
     }
   }
 
-  async function requestPost(action, payload = {}) {
+  async function requestPost(action, payload = {}, options = {}) {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), config.REQUEST_TIMEOUT_MS);
 
@@ -124,7 +152,10 @@ window.AtelierAPI = (() => {
         headers: {
           "Content-Type": "text/plain;charset=utf-8"
         },
-        body: JSON.stringify({ action, payload }),
+        body: JSON.stringify({
+          action,
+          payload: options.skipSession ? payload : { ...payload, sessionToken: getSession()?.sessionToken || "" }
+        }),
         signal: controller.signal
       });
 
@@ -137,7 +168,13 @@ window.AtelierAPI = (() => {
       }
 
       if (!response.ok || json.ok === false) {
-        throw new Error(json.message || "Apps Script rechazó la operación.");
+        const requestError = new Error(json.message || "Apps Script rechazó la operación.");
+        requestError.code = json.code || "";
+        if (requestError.code === "AUTH_REQUIRED") {
+          clearSession();
+          window.dispatchEvent(new CustomEvent("atelier:auth-required"));
+        }
+        throw requestError;
       }
 
       return json;
@@ -201,6 +238,7 @@ window.AtelierAPI = (() => {
         const result = await request("getAllData", { force: forceRemote });
         return applyData(result.data || result);
       } catch (error) {
+        if (error.code === "AUTH_REQUIRED") throw error;
         const cached = getCachedData();
         if (cached) {
           applyData(cached);
@@ -706,6 +744,11 @@ window.AtelierAPI = (() => {
     deleteCatalogoCosto,
     calculateQuote,
     hasRemoteUrl,
+    login,
+    logout,
+    hasSession,
+    getSession,
+    clearSession,
     getCachedData,
     getState: () => U.clone(state)
   };
