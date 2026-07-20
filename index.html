@@ -216,19 +216,18 @@
     <section class="content-view" data-view-panel="agenda">
       <div class="module-toolbar">
         <div>
-          <p class="section-kicker">Calendario comercial</p>
-          <h3>Agenda mensual</h3>
+          <p class="section-kicker">Citas y pruebas</p>
+          <h3>Agenda</h3>
         </div>
-        <button id="thisWeekBtn" class="ghost-button" type="button">Eventos de esta semana</button>
+        <div class="row-actions">
+          <button id="todayAgendaBtn" class="ghost-button" type="button">Hoy</button>
+          <button id="thisWeekBtn" class="ghost-button" type="button">Esta semana</button>
+          <button id="newAppointmentBtn" class="primary-button" type="button">Nueva cita</button>
+        </div>
       </div>
       <div class="filters-row compact">
         <select id="agendaMonthFilter" class="field-input"></select>
         <select id="agendaStatusFilter" class="field-input"></select>
-        <select id="agendaPaymentFilter" class="field-input">
-          <option value="">Todos</option>
-          <option value="pending">Saldo pendiente</option>
-          <option value="paid">Pagados</option>
-        </select>
       </div>
       <div id="agendaMonths" class="agenda-list"></div>
     </section>
@@ -244,6 +243,7 @@
   <script src="js/pedidos.js"></script>
   <script src="js/pagos.js"></script>
   <script src="js/agenda.js"></script>
+  <script src="js/cotizaciones.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -30,6 +30,8 @@ window.PedidosModule = (() => {
       if (action === "edit") openOrderModal(order);
       if (action === "delete") confirmDeleteOrder(order);
       if (action === "pay") window.PagosModule.openPaymentModal(order.id);
+      if (action === "appointment") window.AgendaModule.openAppointmentModal(null, { clienteId: order.clienteId, pedidoId: order.id, tipo: "Primera prueba" });
+      if (action === "quote") window.CotizacionesModule.openQuoteModal(order);
     });
   }
 
@@ -131,6 +133,8 @@ window.PedidosModule = (() => {
           <small>${paymentBadge}</small>
         </div>
         <div data-label="Acciones" class="row-actions">
+          <button class="small-button" data-order-action="appointment" data-id="${U.escapeHtml(order.id)}" type="button">Cita</button>
+          <button class="small-button" data-order-action="quote" data-id="${U.escapeHtml(order.id)}" type="button">Cotización</button>
           <button class="small-button" data-order-action="pay" data-id="${U.escapeHtml(order.id)}" type="button">Abono</button>
           <button class="small-button" data-order-action="edit" data-id="${U.escapeHtml(order.id)}" type="button">Editar</button>
           <button class="small-button" data-order-action="delete" data-id="${U.escapeHtml(order.id)}" type="button">Eliminar</button>

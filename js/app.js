@@ -7,6 +7,7 @@ window.AtelierApp = (() => {
     clientes: [],
     pedidos: [],
     pagos: [],
+    citas: [],
     enrichedPedidos: [],
     clientById: new Map(),
     orderById: new Map(),
@@ -23,7 +24,7 @@ window.AtelierApp = (() => {
       orderPaymentFilter: "",
       agendaMonthFilter: "",
       agendaStatusFilter: "",
-      agendaPaymentFilter: "",
+      agendaTodayOnly: false,
       agendaWeekOnly: false
     }
   };
@@ -216,6 +217,7 @@ window.AtelierApp = (() => {
     state.clientes = data.clientes || [];
     state.pedidos = data.pedidos || [];
     state.pagos = data.pagos || [];
+    state.citas = data.citas || [];
     state.clientById = new Map(state.clientes.map((client) => [client.id, client]));
     state.paymentsByOrder = state.pagos.reduce((map, payment) => {
       if (!map.has(payment.pedidoId)) map.set(payment.pedidoId, []);
