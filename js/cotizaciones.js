@@ -56,6 +56,7 @@ window.CotizacionesModule = (() => {
       <div data-label="Estado">${UI.badge(status.label, status.tone)}</div>
       <div class="row-actions" data-label="Acciones">
         <button class="small-button" data-quote-action="pdf" data-id="${U.escapeHtml(quote.id)}" type="button">PDF</button>
+        <button class="small-button" data-quote-action="share" data-id="${U.escapeHtml(quote.id)}" type="button">Compartir PDF</button>
         <button class="small-button" data-quote-action="edit" data-id="${U.escapeHtml(quote.id)}" type="button">Editar</button>
         ${quote.estado === "borrador" ? `<button class="small-button" data-quote-action="sent" data-id="${U.escapeHtml(quote.id)}" type="button">Marcar enviada</button>` : ""}
         ${["enviada", "borrador"].includes(quote.estado) ? `<button class="small-button" data-quote-action="accept" data-id="${U.escapeHtml(quote.id)}" type="button">Aceptar</button>` : ""}
@@ -72,7 +73,8 @@ window.CotizacionesModule = (() => {
     if (!quote) return;
     const action = button.dataset.quoteAction;
     if (action === "edit") openEditor(quote);
-    if (action === "pdf") openPrintableQuote(quote);
+    if (action === "pdf") openQuotePdf(quote);
+    if (action === "share") await shareQuotePdf(quote);
     if (action === "sent") await changeStatus(quote, "enviada", "Cotización marcada como enviada");
     if (action === "accept") await changeStatus(quote, "aceptada", "Cotización aceptada");
     if (action === "convert") openConvertModal(quote);
@@ -248,21 +250,168 @@ window.CotizacionesModule = (() => {
     });
   }
 
-  function openPrintableQuote(quote) {
-    const client = window.AtelierApp.state.clientById.get(quote.clienteId);
-    if (!client) return UI.toast("Clienta no encontrada", "Revisa la cotización.", "error");
-    const subject = `Cotización ${quote.numero} - Atelier Studio`;
-    const message = `Hola ${client.nombres || client.nombre}, te compartimos la cotización ${quote.numero} por ${U.formatCurrency(quote.precioFinal)}. Abono requerido: ${U.formatCurrency(quote.abonoRequerido)}.`;
-    const phone = String(client.telefono || "").replace(/\D/g, "");
-    const printable = window.open("", "_blank");
-    if (!printable) throw new Error("El navegador bloqueó la ventana. Habilita las ventanas emergentes.");
-    printable.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${U.escapeHtml(subject)}</title><style>body{font-family:Arial,sans-serif;color:#282421;max-width:820px;margin:36px auto;padding:0 24px}header{display:flex;justify-content:space-between;border-bottom:2px solid #9b5d64;padding-bottom:18px}h1{margin:0;color:#9b5d64}section{margin:26px 0}.amount{font-size:32px;font-weight:700}.box{background:#f7f1ed;padding:18px;border-radius:12px}.actions{display:flex;gap:10px;margin-top:30px}.actions a,.actions button{padding:10px 14px;border:0;border-radius:8px;background:#9b5d64;color:white;text-decoration:none}@media print{.actions{display:none}}</style></head><body><header><div><h1>Atelier Studio</h1><p>Vestidos personalizados</p></div><div><strong>${U.escapeHtml(quote.numero)}</strong><p>${U.formatDate(quote.fechaCreacion)}</p></div></header><section><h2>Cotización para ${U.escapeHtml(client.nombre)}</h2><p>${U.escapeHtml(client.correo || "")} · ${U.escapeHtml(client.telefono || "")}</p></section><section><h3>Propuesta</h3><p>${U.escapeHtml(quote.descripcion)}</p></section><section class="box"><p>Valor total</p><div class="amount">${U.formatCurrency(quote.precioFinal)}</div><p>Abono requerido: <strong>${U.formatCurrency(quote.abonoRequerido)}</strong></p>${quote.fechaEntrega ? `<p>Entrega estimada: <strong>${U.formatDate(quote.fechaEntrega)}</strong></p>` : ""}<p>Vigencia: ${U.escapeHtml(quote.vigenciaDias || 15)} días</p></section><section><h3>Condiciones</h3><p>${U.escapeHtml(quote.condiciones || "")}</p></section><div class="actions"><button onclick="window.print()">Guardar como PDF</button><a href="mailto:${encodeURIComponent(client.correo || "")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}">Enviar por correo</a>${phone ? `<a href="https://wa.me/${phone}?text=${encodeURIComponent(message)}" target="_blank">Enviar por WhatsApp</a>` : ""}</div></body></html>`);
-    printable.document.close();
+  function quotePdfFilename(quote) {
+    const safeNumber = String(quote.numero || "cotizacion").replace(/[^a-zA-Z0-9_-]+/g, "-");
+    return `${safeNumber}.pdf`;
   }
+
+  function createQuotePdf(quote) {
+    const client = window.AtelierApp.state.clientById.get(quote.clienteId);
+    if (!client) throw new Error("No se encontró la clienta de esta cotización.");
+    const JsPdf = window.jspdf?.jsPDF;
+    if (!JsPdf) throw new Error("No fue posible cargar el generador de PDF. Revisa tu conexión e inténtalo nuevamente.");
+
+    const doc = new JsPdf({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 18;
+    const contentWidth = pageWidth - margin * 2;
+    const rose = [155, 93, 100];
+    const ink = [40, 36, 33];
+    const muted = [113, 103, 97];
+    let y = 20;
+
+    const addWrappedText = (text, x, maxWidth, options = {}) => {
+      const lineHeight = options.lineHeight || 5.5;
+      doc.splitTextToSize(String(text || ""), maxWidth).forEach((line) => {
+        if (y + lineHeight > pageHeight - 18) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.text(line, x, y);
+        y += lineHeight;
+      });
+    };
+
+    doc.setTextColor(...rose);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text("Atelier Studio", margin, y);
+    doc.setTextColor(...muted);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text("Vestidos personalizados", margin, y + 6);
+    doc.setTextColor(...ink);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(String(quote.numero || "Cotización"), pageWidth - margin, y, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(U.formatDate(quote.fechaCreacion), pageWidth - margin, y + 6, { align: "right" });
+    y += 15;
+    doc.setDrawColor(...rose);
+    doc.setLineWidth(0.7);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 13;
+
+    doc.setTextColor(...ink);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(15);
+    doc.text(`Cotización para ${client.nombre || "Clienta"}`, margin, y);
+    y += 7;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(...muted);
+    const contact = [client.correo, client.telefono].filter(Boolean).join("  ·  ");
+    if (contact) doc.text(contact, margin, y);
+    y += 14;
+
+    doc.setTextColor(...ink);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Propuesta", margin, y);
+    y += 7;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    addWrappedText(quote.descripcion, margin, contentWidth);
+    y += 5;
+
+    const boxHeight = quote.fechaEntrega ? 43 : 37;
+    if (y + boxHeight > pageHeight - 18) { doc.addPage(); y = 20; }
+    doc.setFillColor(247, 241, 237);
+    doc.roundedRect(margin, y, contentWidth, boxHeight, 3, 3, "F");
+    y += 9;
+    doc.setTextColor(...muted);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text("VALOR TOTAL", margin + 7, y);
+    y += 9;
+    doc.setTextColor(...rose);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text(U.formatCurrency(quote.precioFinal), margin + 7, y);
+    y += 8;
+    doc.setTextColor(...ink);
+    doc.setFontSize(9.5);
+    doc.text(`Abono requerido: ${U.formatCurrency(quote.abonoRequerido)}`, margin + 7, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Vigencia: ${quote.vigenciaDias || 15} días`, pageWidth - margin - 7, y, { align: "right" });
+    if (quote.fechaEntrega) {
+      y += 6;
+      doc.text(`Entrega estimada: ${U.formatDate(quote.fechaEntrega)}`, margin + 7, y);
+    }
+    y += 15;
+
+    doc.setTextColor(...ink);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Condiciones", margin, y);
+    y += 7;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    addWrappedText(quote.condiciones || "El pedido inicia con el abono acordado.", margin, contentWidth, { lineHeight: 5 });
+
+    const totalPages = doc.getNumberOfPages();
+    for (let page = 1; page <= totalPages; page += 1) {
+      doc.setPage(page);
+      doc.setDrawColor(220, 210, 204);
+      doc.line(margin, pageHeight - 14, pageWidth - margin, pageHeight - 14);
+      doc.setTextColor(...muted);
+      doc.setFontSize(8);
+      doc.text("Cotización elaborada por Atelier Studio", margin, pageHeight - 9);
+      doc.text(`Página ${page} de ${totalPages}`, pageWidth - margin, pageHeight - 9, { align: "right" });
+    }
+    return { doc, client, filename: quotePdfFilename(quote) };
+  }
+
+  function openQuotePdf(quote) {
+    try {
+      const { doc, filename } = createQuotePdf(quote);
+      const blobUrl = URL.createObjectURL(doc.output("blob"));
+      const viewer = window.open(blobUrl, "_blank");
+      if (!viewer) {
+        URL.revokeObjectURL(blobUrl);
+        doc.save(filename);
+        UI.toast("PDF descargado", "El navegador bloqueó la pestaña, así que guardamos el archivo.", "info");
+        return;
+      }
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 300000);
+    } catch (error) {
+      UI.toast("No se pudo generar el PDF", error.message, "error");
+    }
+  }
+
+  async function shareQuotePdf(quote) {
+    try {
+      const { doc, client, filename } = createQuotePdf(quote);
+      const blob = doc.output("blob");
+      const file = new File([blob], filename, { type: "application/pdf" });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: `Cotización ${quote.numero || ""}`.trim(), text: `Cotización para ${client.nombre || "la clienta"}`, files: [file] });
+        return;
+      }
+      doc.save(filename);
+      UI.toast("PDF descargado", "Puedes adjuntarlo ahora en WhatsApp o correo.", "info");
+    } catch (error) {
+      if (error?.name !== "AbortError") UI.toast("No se pudo compartir el PDF", error.message, "error");
+    }
+  }
+
+  const openPrintableQuote = openQuotePdf;
 
   function confirmDelete(quote) {
     UI.openConfirm({ title: "Eliminar cotización", message: `Se eliminará ${quote.numero} y su hoja interna de costos.`, confirmText: "Eliminar", onConfirm: async () => { await API.deleteCotizacion(quote.id); await window.AtelierApp.afterMutation("Cotización eliminada"); } });
   }
 
-  return { init, render, openQuoteModal, openEditor, openPrintableQuote };
+  return { init, render, openQuoteModal, openEditor, openPrintableQuote, openQuotePdf, shareQuotePdf, createQuotePdf };
 })();
