@@ -4,7 +4,7 @@ window.ATELIER_CONFIG = {
 
   // Si la URL está vacía, la app usa datos locales para probar todo el CRUD.
   USE_DEMO_DATA_WHEN_EMPTY: true,
-  JSONP_FALLBACK: false,
+  JSONP_FALLBACK: true,
   JSONP_MAX_URL_LENGTH: 1800,
 
   LOCALE: "es-CO",
