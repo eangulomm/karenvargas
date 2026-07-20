@@ -22,7 +22,9 @@ const ATELIER_NUMERIC_FIELDS = ["valorTotal", "primerAbono", "saldoPendiente", "
 const ATELIER_DATE_FIELDS = ["fechaRegistro", "fechaEvento", "fechaLimitePago", "fechaEntrega", "fechaCreacion", "fechaActualizacion", "fechaPago", "fecha"];
 const ATELIER_TIME_FIELDS = ["hora"];
 const ATELIER_MONTH_FIELDS = ["mesEvento"];
-const ATELIER_LOGIN_EMAIL = "atelierkarenvargas@gmail.com";
+const ATELIER_LOGIN_USER = "karenvargas";
+const ATELIER_DEFAULT_PASSWORD_SALT = "b15806bf08225463af6a837f72e9b9b0a6b04820c3d20f94";
+const ATELIER_DEFAULT_PASSWORD_HASH = "7cb3d3570c31f5466d84afce34674a7de1cf69a07a73b68b5f488ade69d0fefb";
 const ATELIER_GET_ACTIONS = ["ping"];
 const ATELIER_SESSION_DAYS = 30;
 const ATELIER_MAX_LOGIN_ATTEMPTS = 5;
@@ -96,9 +98,10 @@ function configurarAcceso() {
   const props = PropertiesService.getScriptProperties();
   const salt = randomToken_();
   props.setProperties({
-    ATELIER_LOGIN_EMAIL: ATELIER_LOGIN_EMAIL,
+    ATELIER_LOGIN_USER: ATELIER_LOGIN_USER,
     ATELIER_PASSWORD_SALT: salt,
-    ATELIER_PASSWORD_HASH: hashText_(salt + password)
+    ATELIER_PASSWORD_HASH: hashText_(salt + password),
+    ATELIER_PASSWORD_CUSTOMIZED: "YES"
   });
   clearSessions_();
   ui.alert("Acceso configurado", "La contraseña quedó guardada de forma protegida. Todas las sesiones anteriores fueron cerradas.", ui.ButtonSet.OK);
@@ -238,24 +241,24 @@ function handleAction_(action, payload) {
 }
 
 function login_(payload) {
-  const email = String(payload.email || "").toLowerCase().trim();
+  const username = String(payload.username || "").toLowerCase().trim();
   const password = String(payload.password || "");
   const props = PropertiesService.getScriptProperties();
-  const salt = props.getProperty("ATELIER_PASSWORD_SALT");
-  const expectedHash = props.getProperty("ATELIER_PASSWORD_HASH");
-  if (!salt || !expectedHash) throw authError_("La contraseña todavía no ha sido configurada en el Google Sheet.", "AUTH_NOT_CONFIGURED");
+  const customized = props.getProperty("ATELIER_PASSWORD_CUSTOMIZED") === "YES";
+  const salt = customized ? props.getProperty("ATELIER_PASSWORD_SALT") : ATELIER_DEFAULT_PASSWORD_SALT;
+  const expectedHash = customized ? props.getProperty("ATELIER_PASSWORD_HASH") : ATELIER_DEFAULT_PASSWORD_HASH;
 
-  const attemptKey = "atelier_login_" + hashText_(email).slice(0, 24);
+  const attemptKey = "atelier_login_" + hashText_(username).slice(0, 24);
   const cache = CacheService.getScriptCache();
   const attempts = Number(cache.get(attemptKey) || 0);
   if (attempts >= ATELIER_MAX_LOGIN_ATTEMPTS) {
     throw authError_("Demasiados intentos. Espera 15 minutos antes de volver a intentar.", "AUTH_LOCKED");
   }
 
-  const configuredEmail = String(props.getProperty("ATELIER_LOGIN_EMAIL") || ATELIER_LOGIN_EMAIL).toLowerCase().trim();
-  const validEmail = constantTimeEquals_(email, configuredEmail);
+  const configuredUser = String(props.getProperty("ATELIER_LOGIN_USER") || ATELIER_LOGIN_USER).toLowerCase().trim();
+  const validUser = constantTimeEquals_(username, configuredUser);
   const validPassword = constantTimeEquals_(hashText_(salt + password), expectedHash);
-  if (!validEmail || !validPassword) {
+  if (!validUser || !validPassword) {
     cache.put(attemptKey, String(attempts + 1), ATELIER_LOGIN_LOCK_SECONDS);
     throw authError_("Correo o contraseña incorrectos.", "AUTH_INVALID");
   }
@@ -264,8 +267,8 @@ function login_(payload) {
   cleanupExpiredSessions_();
   const token = randomToken_() + randomToken_();
   const expiresAt = Date.now() + ATELIER_SESSION_DAYS * 86400000;
-  props.setProperty(sessionKey_(token), JSON.stringify({ email: configuredEmail, expiresAt }));
-  return { ok: true, message: "Sesión iniciada", data: { sessionToken: token, email: configuredEmail, expiresAt } };
+  props.setProperty(sessionKey_(token), JSON.stringify({ username: configuredUser, expiresAt }));
+  return { ok: true, message: "Sesión iniciada", data: { sessionToken: token, username: configuredUser, expiresAt } };
 }
 
 function requireSession_(token) {
@@ -285,7 +288,7 @@ function requireSession_(token) {
 
 function logout_(token, session) {
   PropertiesService.getScriptProperties().deleteProperty(sessionKey_(token));
-  return { ok: true, message: "Sesión cerrada", data: { email: session.email } };
+  return { ok: true, message: "Sesión cerrada", data: { username: session.username } };
 }
 
 function authError_(message, code) {

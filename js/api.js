@@ -28,8 +28,8 @@ window.AtelierAPI = (() => {
     localStorage.removeItem(config.SESSION_STORAGE_KEY);
   }
 
-  async function login(email, password) {
-    const result = await requestPost("login", { email, password }, { skipSession: true });
+  async function login(username, password) {
+    const result = await requestPost("login", { username, password }, { skipSession: true });
     U.writeStorage(config.SESSION_STORAGE_KEY, result.data);
     return result.data;
   }

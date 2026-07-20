@@ -133,9 +133,9 @@ El flujo recomendado es: `Primera cita > Cotizar > Hoja de costos > PDF > Acepta
 El endpoint puede ser público porque todas las operaciones, excepto `ping`, exigen una sesión válida del login propio del sistema. La contraseña se guarda como un hash con salt en las propiedades privadas de Apps Script; no queda en GitHub ni en el navegador.
 
 1. Crea el Sheet y el proyecto Apps Script desde `atelierkarenvargas@gmail.com`.
-2. Recarga el Google Sheet después de guardar `Code.gs`.
-3. En el menú `Atelier`, selecciona `Configurar contraseña` y escríbela dos veces. Debe tener al menos 10 caracteres.
-4. Implementa el web app para ejecutar como `Yo` y permite acceso a `Cualquier usuario`.
+2. Implementa el web app para ejecutar como `Yo` y permite acceso a `Cualquier usuario`.
+3. Ingresa con el usuario privado entregado al propietario del sistema. La contraseña predeterminada no se documenta ni se guarda como texto en el repositorio.
+4. Si deseas cambiarla, recarga el Sheet y usa `Atelier > Configurar contraseña`.
 5. Usa `Cerrar todas las sesiones` si cambias la contraseña, pierdes un dispositivo o necesitas revocar accesos.
 
 El login bloquea durante 15 minutos después de cinco intentos incorrectos y cada sesión válida dura 30 días. No compartas la contraseña ni la guardes dentro del código.

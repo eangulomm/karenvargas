@@ -45,12 +45,12 @@ window.AtelierApp = (() => {
       event.preventDefault();
       const button = UI.qs("#loginBtn");
       const errorBox = UI.qs("#loginError");
-      const email = UI.qs("#loginEmail")?.value.trim();
+      const username = UI.qs("#loginUsername")?.value.trim();
       const password = UI.qs("#loginPassword")?.value || "";
       if (errorBox) errorBox.textContent = "";
       if (button) { button.disabled = true; button.textContent = "Ingresando..."; }
       try {
-        await API.login(email, password);
+        await API.login(username, password);
         if (UI.qs("#loginPassword")) UI.qs("#loginPassword").value = "";
         hideLogin();
         await startApplication();
