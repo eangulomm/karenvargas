@@ -693,6 +693,130 @@
   font-size: 12px;
 }
 
+.quote-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.quote-summary article,
+.quote-conversion-summary {
+  display: grid;
+  gap: 5px;
+  padding: 16px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-paper);
+}
+
+.quote-summary span,
+.quote-conversion-summary span {
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.quote-summary strong {
+  font-size: 22px;
+}
+
+.quote-row {
+  grid-template-columns: 1.45fr 0.75fr 1fr 0.65fr 1.6fr;
+}
+
+.quote-editor {
+  display: grid;
+  gap: 20px;
+}
+
+.cost-sheet {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-porcelain);
+  overflow-x: auto;
+}
+
+.cost-sheet-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cost-sheet-header > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.cost-sheet-header span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.cost-grid {
+  display: grid;
+  grid-template-columns: 125px minmax(170px, 1.5fr) 75px 95px 130px 110px 38px;
+  gap: 8px;
+  align-items: center;
+  min-width: 850px;
+  margin-bottom: 8px;
+}
+
+.cost-grid-header {
+  color: var(--color-soft);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.cost-subtotal {
+  text-align: right;
+  font-size: 13px;
+}
+
+.quote-calculation {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.quote-calculation .full {
+  grid-column: 1 / -1;
+}
+
+.quote-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quote-totals div {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  background: var(--color-blush);
+}
+
+.quote-totals span {
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.catalog-list {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  margin-top: 18px;
+  overflow-y: auto;
+}
+
 .toast-host {
   position: fixed;
   right: 18px;

@@ -22,6 +22,10 @@ window.ClientesModule = (() => {
       if (action === "edit") openClientModal(client);
       if (action === "delete") confirmDeleteClient(client);
       if (action === "order") window.PedidosModule.openOrderModal(null, client.id);
+      if (action === "quote") {
+        window.AtelierApp.navigate("cotizaciones");
+        window.CotizacionesModule.openEditor(null, { clienteId: client.id });
+      }
       if (action === "history") {
         window.AtelierApp.navigate("pedidos");
         const input = UI.qs("#orderSearch");
@@ -95,6 +99,7 @@ window.ClientesModule = (() => {
         <div class="card-actions">
           <button class="small-button" data-client-action="history" data-id="${U.escapeHtml(client.id)}" type="button">Historial</button>
           <button class="small-button" data-client-action="order" data-id="${U.escapeHtml(client.id)}" type="button">Pedido</button>
+          <button class="small-button" data-client-action="quote" data-id="${U.escapeHtml(client.id)}" type="button">Cotizar</button>
           <button class="small-button" data-client-action="edit" data-id="${U.escapeHtml(client.id)}" type="button">Editar</button>
           <button class="small-button" data-client-action="delete" data-id="${U.escapeHtml(client.id)}" type="button">Eliminar</button>
         </div>
@@ -138,10 +143,11 @@ window.ClientesModule = (() => {
 
   function confirmDeleteClient(client) {
     const count = window.AtelierApp.state.pedidos.filter((pedido) => pedido.clienteId === client.id).length;
+    const quoteCount = window.AtelierApp.state.cotizaciones.filter((quote) => quote.clienteId === client.id).length;
     UI.openConfirm({
       title: "Eliminar clienta",
-      message: count
-        ? `También se eliminarán ${count} pedido(s) y sus pagos asociados. Esta acción no se puede deshacer.`
+      message: count || quoteCount
+        ? `También se eliminarán ${count} pedido(s), ${quoteCount} cotización(es), sus costos, pagos y citas asociados. Esta acción no se puede deshacer.`
         : "Esta acción no se puede deshacer.",
       confirmText: "Eliminar clienta",
       onConfirm: async () => {

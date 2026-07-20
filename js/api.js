@@ -6,7 +6,9 @@ window.AtelierAPI = (() => {
     clientes: [],
     pedidos: [],
     pagos: [],
-    citas: []
+    citas: [],
+    cotizaciones: [],
+    catalogoCostos: []
   };
 
   function hasRemoteUrl() {
@@ -33,7 +35,21 @@ window.AtelierAPI = (() => {
         ...normalizeRecord(pago),
         monto: U.toNumber(pago.monto)
       })),
-      citas: (data?.citas || []).map(normalizeRecord)
+      citas: (data?.citas || []).map(normalizeRecord),
+      cotizaciones: (data?.cotizaciones || []).map((cotizacion) => ({
+        ...normalizeRecord(cotizacion),
+        costos: (() => { try { return JSON.parse(cotizacion.costosJson || "[]"); } catch (error) { return []; } })(),
+        costoTotal: U.toNumber(cotizacion.costoTotal),
+        porcentajeGanancia: U.toNumber(cotizacion.porcentajeGanancia),
+        valorGanancia: U.toNumber(cotizacion.valorGanancia),
+        precioSugerido: U.toNumber(cotizacion.precioSugerido),
+        ajuste: U.toNumber(cotizacion.ajuste),
+        precioFinal: U.toNumber(cotizacion.precioFinal),
+        porcentajeAbono: U.toNumber(cotizacion.porcentajeAbono),
+        abonoRequerido: U.toNumber(cotizacion.abonoRequerido),
+        vigenciaDias: U.toNumber(cotizacion.vigenciaDias)
+      })),
+      catalogoCostos: (data?.catalogoCostos || []).map((item) => ({ ...normalizeRecord(item), costoUnitario: U.toNumber(item.costoUnitario) }))
     };
   }
 
@@ -273,6 +289,7 @@ window.AtelierAPI = (() => {
       state.pedidos = state.pedidos.filter((pedido) => pedido.clienteId !== id);
       state.pagos = state.pagos.filter((pago) => !orderIds.includes(pago.pedidoId));
       state.citas = state.citas.filter((cita) => cita.clienteId !== id);
+      state.cotizaciones = state.cotizaciones.filter((cotizacion) => cotizacion.clienteId !== id);
     });
   }
 
@@ -339,6 +356,7 @@ window.AtelierAPI = (() => {
       state.pedidos = state.pedidos.filter((pedido) => pedido.id !== id);
       state.pagos = state.pagos.filter((pago) => pago.pedidoId !== id);
       state.citas = state.citas.filter((cita) => cita.pedidoId !== id);
+      state.cotizaciones = state.cotizaciones.map((cotizacion) => cotizacion.pedidoId === id ? { ...cotizacion, pedidoId: "", estado: "aceptada" } : cotizacion);
     });
   }
 
@@ -402,6 +420,60 @@ window.AtelierAPI = (() => {
     return mutate("deleteCita", { id }, () => {
       state.citas = state.citas.filter((item) => item.id !== id);
     });
+  }
+
+  function calculateQuote(cotizacion) {
+    const costos = (cotizacion.costos || []).map((item) => {
+      const cantidad = Math.max(U.toNumber(item.cantidad), 0);
+      const costoUnitario = Math.max(U.toNumber(item.costoUnitario), 0);
+      return { ...item, cantidad, costoUnitario, subtotal: cantidad * costoUnitario };
+    }).filter((item) => item.nombre?.trim() && item.cantidad > 0);
+    const costoTotal = U.sum(costos.map((item) => item.subtotal));
+    const porcentajeGanancia = Math.max(U.toNumber(cotizacion.porcentajeGanancia), 0);
+    const metodoGanancia = cotizacion.metodoGanancia === "margen" ? "margen" : "sobre_costo";
+    const precioSugerido = metodoGanancia === "margen" && porcentajeGanancia < 100
+      ? Math.round(costoTotal / (1 - porcentajeGanancia / 100))
+      : Math.round(costoTotal * (1 + porcentajeGanancia / 100));
+    const ajuste = U.toNumber(cotizacion.ajuste);
+    const precioFinal = U.toNumber(cotizacion.precioFinal) > 0 ? U.toNumber(cotizacion.precioFinal) : Math.max(precioSugerido + ajuste, 0);
+    const porcentajeAbono = Math.min(Math.max(U.toNumber(cotizacion.porcentajeAbono) || 50, 0), 100);
+    return { ...cotizacion, costos, costosJson: JSON.stringify(costos), costoTotal, metodoGanancia, porcentajeGanancia, precioSugerido, ajuste, precioFinal, valorGanancia: Math.max(precioFinal - costoTotal, 0), porcentajeAbono, abonoRequerido: Math.round(precioFinal * porcentajeAbono / 100) };
+  }
+
+  function createCotizacion(cotizacion) {
+    const record = { ...calculateQuote(cotizacion), id: cotizacion.id || U.createId("cot"), numero: cotizacion.numero || "", estado: cotizacion.estado || "borrador", fechaCreacion: U.todayISO(), fechaActualizacion: U.todayISO() };
+    return mutate("createCotizacion", { cotizacion: record }, () => state.cotizaciones.push(record));
+  }
+
+  function updateCotizacion(id, cotizacion) {
+    const index = state.cotizaciones.findIndex((item) => item.id === id);
+    if (index < 0) return Promise.reject(new Error("No se encontró la cotización."));
+    const updated = calculateQuote({ ...state.cotizaciones[index], ...cotizacion });
+    return mutate("updateCotizacion", { id, cotizacion: updated }, () => {
+      if (index < 0) throw new Error("No se encontró la cotización.");
+      state.cotizaciones[index] = { ...state.cotizaciones[index], ...updated, id, fechaActualizacion: U.todayISO() };
+    });
+  }
+
+  function deleteCotizacion(id) {
+    return mutate("deleteCotizacion", { id }, () => { state.cotizaciones = state.cotizaciones.filter((item) => item.id !== id); });
+  }
+
+  function createCatalogoCosto(item) {
+    const record = { ...item, id: item.id || U.createId("ins"), costoUnitario: U.toNumber(item.costoUnitario), activo: "SI", fechaActualizacion: U.todayISO() };
+    return mutate("createCatalogoCosto", { item: record }, () => state.catalogoCostos.push(record));
+  }
+
+  function updateCatalogoCosto(id, item) {
+    return mutate("updateCatalogoCosto", { id, item }, () => {
+      const index = state.catalogoCostos.findIndex((entry) => entry.id === id);
+      if (index < 0) throw new Error("No se encontró el costo.");
+      state.catalogoCostos[index] = { ...state.catalogoCostos[index], ...item, id, costoUnitario: U.toNumber(item.costoUnitario), fechaActualizacion: U.todayISO() };
+    });
+  }
+
+  function deleteCatalogoCosto(id) {
+    return mutate("deleteCatalogoCosto", { id }, () => { state.catalogoCostos = state.catalogoCostos.filter((item) => item.id !== id); });
   }
 
   function seedDemoData() {
@@ -590,7 +662,7 @@ window.AtelierAPI = (() => {
       }
     ];
 
-    return { clientes, pedidos, pagos, citas: [] };
+    return { clientes, pedidos, pagos, citas: [], cotizaciones: [], catalogoCostos: [] };
   }
 
   return {
@@ -606,6 +678,13 @@ window.AtelierAPI = (() => {
     createCita,
     updateCita,
     deleteCita,
+    createCotizacion,
+    updateCotizacion,
+    deleteCotizacion,
+    createCatalogoCosto,
+    updateCatalogoCosto,
+    deleteCatalogoCosto,
+    calculateQuote,
     hasRemoteUrl,
     getCachedData,
     getState: () => U.clone(state)

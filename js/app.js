@@ -8,6 +8,8 @@ window.AtelierApp = (() => {
     pedidos: [],
     pagos: [],
     citas: [],
+    cotizaciones: [],
+    catalogoCostos: [],
     enrichedPedidos: [],
     clientById: new Map(),
     orderById: new Map(),
@@ -71,6 +73,7 @@ window.AtelierApp = (() => {
     window.PedidosModule.init();
     window.PagosModule.init();
     window.AgendaModule.init();
+    window.CotizacionesModule.init();
     state.modulesReady = true;
   }
 
@@ -218,6 +221,8 @@ window.AtelierApp = (() => {
     state.pedidos = data.pedidos || [];
     state.pagos = data.pagos || [];
     state.citas = data.citas || [];
+    state.cotizaciones = data.cotizaciones || [];
+    state.catalogoCostos = data.catalogoCostos || [];
     state.clientById = new Map(state.clientes.map((client) => [client.id, client]));
     state.paymentsByOrder = state.pagos.reduce((map, payment) => {
       if (!map.has(payment.pedidoId)) map.set(payment.pedidoId, []);
@@ -312,6 +317,7 @@ window.AtelierApp = (() => {
     if (state.currentView === "pedidos") window.PedidosModule?.render();
     if (state.currentView === "pagos") window.PagosModule?.render();
     if (state.currentView === "agenda") window.AgendaModule?.render();
+    if (state.currentView === "cotizaciones") window.CotizacionesModule?.render();
     updateSidebarMonth();
   }
 

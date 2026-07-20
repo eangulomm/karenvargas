@@ -57,7 +57,8 @@
 
   .split-grid,
   .filters-row.compact,
-  .payments-summary {
+  .payments-summary,
+  .quote-summary {
     grid-template-columns: 1fr;
   }
 
@@ -119,7 +120,9 @@
   }
 
   .dashboard-grid,
-  .cards-grid {
+  .cards-grid,
+  .quote-totals,
+  .quote-calculation {
     grid-template-columns: 1fr;
   }
 
