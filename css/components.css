@@ -988,6 +988,33 @@ body.auth-locked .app-shell {
   height: 28px;
 }
 
+.pwa-install-button {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 1200;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 11px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: #171412;
+  color: #fff;
+  box-shadow: 0 10px 30px rgba(23, 20, 18, 0.24);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pwa-install-button[hidden] { display: none; }
+
+@media (display-mode: standalone) {
+  .pwa-install-button { display: none; }
+}
+
 .result-note {
   padding: 12px 14px;
   border: 1px solid rgba(185, 142, 75, 0.2);

@@ -1,0 +1,18 @@
+{
+  "id": "./",
+  "name": "Karen Vargas Atelier",
+  "short_name": "Karen Vargas",
+  "description": "Gestión privada de clientas, pedidos, pagos, cotizaciones y agenda del atelier.",
+  "lang": "es-CO",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "portrait-primary",
+  "background_color": "#f7f3ee",
+  "theme_color": "#171412",
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
