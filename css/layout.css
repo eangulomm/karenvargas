@@ -12,24 +12,16 @@
 }
 
 .brand {
-  display: grid;
-  grid-template-columns: 52px 1fr;
-  gap: 14px;
-  align-items: center;
-  min-height: 58px;
+  display: block;
 }
 
-.brand-mark {
-  display: grid;
-  width: 52px;
-  height: 52px;
-  place-items: center;
-  border: 1px solid rgba(241, 223, 191, 0.55);
-  border-radius: 50%;
-  color: var(--color-gold-soft);
-  font-family: var(--font-serif);
-  font-size: 18px;
-  font-weight: 700;
+.brand-logo {
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: #fff;
 }
 
 .brand-eyebrow,
@@ -52,7 +44,7 @@
 .nav-list {
   display: grid;
   gap: 8px;
-  margin-top: 38px;
+  margin-top: 28px;
 }
 
 .nav-item {
